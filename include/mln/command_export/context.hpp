@@ -19,18 +19,14 @@ public:
 
     gfx::UniqueDrawableBuilder createDrawableBuilder(std::string name) override;
     gfx::UniformBufferPtr createUniformBuffer(const void* data,
-                                               std::size_t size,
-                                               bool persistent = false,
-                                               bool ssbo = false) override;
+                                              std::size_t size,
+                                              bool persistent = false,
+                                              bool ssbo = false) override;
     gfx::UniqueUniformBufferArray createLayerUniformBufferArray() override;
     gfx::ShaderProgramBasePtr getGenericShader(gfx::ShaderRegistry&, const std::string& name) override;
 
-    TileLayerGroupPtr createTileLayerGroup(int32_t layerIndex,
-                                            std::size_t initialCapacity,
-                                            std::string name) override;
-    LayerGroupPtr createLayerGroup(int32_t layerIndex,
-                                    std::size_t initialCapacity,
-                                    std::string name) override;
+    TileLayerGroupPtr createTileLayerGroup(int32_t layerIndex, std::size_t initialCapacity, std::string name) override;
+    LayerGroupPtr createLayerGroup(int32_t layerIndex, std::size_t initialCapacity, std::string name) override;
 
     gfx::Texture2DPtr createTexture2D() override;
     gfx::DynamicTexturePtr createDynamicTexture(Size size, gfx::TexturePixelType pixelType) override;
@@ -52,9 +48,9 @@ public:
     void clearStencilBuffer(int32_t) override;
 
     bool emplaceOrUpdateUniformBuffer(gfx::UniformBufferPtr&,
-                                       const void* data,
-                                       std::size_t size,
-                                       bool persistent = false) override;
+                                      const void* data,
+                                      std::size_t size,
+                                      bool persistent = false) override;
 
     const gfx::UniformBufferArray& getGlobalUniformBuffers() const override { return globalUniformBuffers; }
     gfx::UniformBufferArray& mutableGlobalUniformBuffers() override { return globalUniformBuffers; }

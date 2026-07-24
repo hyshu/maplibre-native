@@ -17,10 +17,9 @@ std::unique_ptr<gfx::Context> RendererBackend::createContext() {
     return std::make_unique<Context>();
 }
 
-void RendererBackend::initShaders(gfx::ShaderRegistry& registry,
-                                    const ProgramParameters&) {
+void RendererBackend::initShaders(gfx::ShaderRegistry& registry, const ProgramParameters&) {
     // Register stub shader groups for all built-in shaders.
-    // Command Export does not compile GPU shaders; the external renderer selects pipelines.
+    // Command Export does not compile GPU shaders; the consumer selects pipelines.
     // These stubs let MapLibre's layer system create drawables.
     static const char* shaderNames[] = {
         "BackgroundShader",

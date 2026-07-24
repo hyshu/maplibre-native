@@ -38,7 +38,7 @@ void UniformBuffer::update(const void* data, std::size_t dataSize) {
     buffer.getContext().renderingStats().uniformUpdateBytes += dataSize;
     buffer.update(data, dataSize, /*offset=*/0);
 
-    // Save CPU-side copy for Command Export export
+    // Save a CPU-side copy for Command Export.
     if (data && dataSize > 0) {
         setCpuData(data, dataSize);
     }

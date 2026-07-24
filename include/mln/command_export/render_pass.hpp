@@ -5,7 +5,7 @@
 namespace mln {
 namespace command_export {
 
-/// No-op render pass; exported commands are rendered by an external consumer.
+/// No-op render pass. An external consumer performs the actual rendering.
 class RenderPass final : public gfx::RenderPass {
 public:
     RenderPass() = default;

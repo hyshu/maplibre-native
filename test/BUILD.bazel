@@ -50,7 +50,10 @@ cc_library(
         [
             "**/*.test.cpp",
         ],
-        exclude = ["renderer/wgsl_preprocessor.test.cpp"],
+        exclude = [
+            "command_export/**/*.test.cpp",
+            "renderer/wgsl_preprocessor.test.cpp",
+        ],
     ) + select({
         "//:webgpu_renderer": ["renderer/wgsl_preprocessor.test.cpp"],
         "//conditions:default": [],

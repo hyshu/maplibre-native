@@ -9,16 +9,14 @@
 namespace mln {
 namespace command_export {
 
-/// Stub shader group for CommandExport backend.
+/// Stub shader group for the Command Export backend.
 /// Returns a simple ShaderProgram stub — no GPU compilation needed.
 class StubShaderGroup final : public gfx::ShaderGroup {
 public:
     StubShaderGroup(std::string name)
         : shaderName(std::move(name)) {}
 
-    gfx::ShaderPtr getOrCreateShader(gfx::Context&,
-                                      const StringIDSetsPair&,
-                                      std::string_view) override {
+    gfx::ShaderPtr getOrCreateShader(gfx::Context&, const StringIDSetsPair&, std::string_view) override {
         if (!cachedShader) {
             cachedShader = std::make_shared<ShaderProgram>(shaderName);
         }

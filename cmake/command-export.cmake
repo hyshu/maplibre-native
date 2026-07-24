@@ -10,11 +10,16 @@ target_compile_definitions(
 )
 list(APPEND
         INCLUDE_FILES
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/circle_vertex_data.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/command_encoder.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/context.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/dynamic_texture.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/drawable.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/drawable_builder.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/fill_extrusion_vertex_data.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/fill_vertex_data.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/layer_group.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/line_vertex_data.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/render_pass.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/renderer_backend.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/texture2d.hpp
@@ -25,11 +30,16 @@ list(APPEND
 )
 list(APPEND
         SRC_FILES
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/circle_vertex_data.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/command_encoder.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/context.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/dynamic_texture.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/drawable.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/drawable_builder.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/fill_extrusion_vertex_data.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/fill_vertex_data.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/layer_group.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/line_vertex_data.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/renderer_backend.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/texture2d.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/tile_layer_group.cpp

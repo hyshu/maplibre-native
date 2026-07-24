@@ -69,25 +69,25 @@ const gfx::Context& UploadPass::getContext() const {
     return context;
 }
 
-std::unique_ptr<gfx::VertexBufferResource> UploadPass::createVertexBufferResource(
-    const void* data, std::size_t size, gfx::BufferUsageType, bool) {
+std::unique_ptr<gfx::VertexBufferResource> UploadPass::createVertexBufferResource(const void* data,
+                                                                                  std::size_t size,
+                                                                                  gfx::BufferUsageType,
+                                                                                  bool) {
     return std::make_unique<VertexBufferResource>(data, size);
 }
 
-void UploadPass::updateVertexBufferResource(gfx::VertexBufferResource& resource,
-                                             const void* data,
-                                             std::size_t size) {
+void UploadPass::updateVertexBufferResource(gfx::VertexBufferResource& resource, const void* data, std::size_t size) {
     static_cast<VertexBufferResource&>(resource).update(data, size);
 }
 
-std::unique_ptr<gfx::IndexBufferResource> UploadPass::createIndexBufferResource(
-    const void* data, std::size_t size, gfx::BufferUsageType, bool) {
+std::unique_ptr<gfx::IndexBufferResource> UploadPass::createIndexBufferResource(const void* data,
+                                                                                std::size_t size,
+                                                                                gfx::BufferUsageType,
+                                                                                bool) {
     return std::make_unique<IndexBufferResource>(data, size);
 }
 
-void UploadPass::updateIndexBufferResource(gfx::IndexBufferResource& resource,
-                                            const void* data,
-                                            std::size_t size) {
+void UploadPass::updateIndexBufferResource(gfx::IndexBufferResource& resource, const void* data, std::size_t size) {
     static_cast<IndexBufferResource&>(resource).update(data, size);
 }
 

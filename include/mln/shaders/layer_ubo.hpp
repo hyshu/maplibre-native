@@ -72,7 +72,7 @@ enum {
     globalUBOCount
 };
 
-// Disabled for Command Export export: per-drawable UBOs avoid stride issues
+// Disabled for Command Export: per-drawable UBOs avoid stride issues
 #if MLN_RENDER_BACKEND_COMMAND_EXPORT
 #define MLN_UBO_CONSOLIDATION 0
 #else

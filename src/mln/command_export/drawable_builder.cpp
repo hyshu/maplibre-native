@@ -11,8 +11,7 @@ namespace command_export {
 DrawableBuilder::DrawableBuilder(std::string name)
     : gfx::DrawableBuilder(std::move(name)) {}
 
-std::unique_ptr<gfx::Drawable::DrawSegment> DrawableBuilder::createSegment(gfx::DrawMode mode,
-                                                                             SegmentBase&& seg) {
+std::unique_ptr<gfx::Drawable::DrawSegment> DrawableBuilder::createSegment(gfx::DrawMode mode, SegmentBase&& seg) {
     return std::make_unique<gfx::Drawable::DrawSegment>(mode, std::move(seg));
 }
 

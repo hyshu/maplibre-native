@@ -2,6 +2,8 @@
 #include <mln/gfx/texture2d.hpp>
 #include <mln/gfx/context.hpp>
 
+#include <limits>
+
 namespace mln {
 namespace gfx {
 
@@ -37,8 +39,18 @@ bool DynamicTexture::isEmpty() const {
 
 std::optional<TextureHandle> DynamicTexture::reserveSize(const Size& size, int32_t uniqueId) {
     std::scoped_lock lock(mutex);
+    constexpr auto maxBinValue = static_cast<uint32_t>(std::numeric_limits<uint16_t>::max());
+    if (size.isEmpty() || size.width > maxBinValue || size.height > maxBinValue) {
+        return std::nullopt;
+    }
     mapbox::Bin* bin = shelfPack.packOne(uniqueId, size.width, size.height);
     if (!bin) {
+        return std::nullopt;
+    }
+    if (bin->x < 0 || bin->y < 0 || bin->w <= 0 || bin->h <= 0 || static_cast<uint32_t>(bin->x) > maxBinValue ||
+        static_cast<uint32_t>(bin->y) > maxBinValue || static_cast<uint32_t>(bin->w) > maxBinValue ||
+        static_cast<uint32_t>(bin->h) > maxBinValue) {
+        shelfPack.unref(*bin);
         return std::nullopt;
     }
     if (bin->refcount() == 1) {

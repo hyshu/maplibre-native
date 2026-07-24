@@ -59,7 +59,7 @@ void UniformBufferArray::createOrUpdate(const size_t id,
 
 void UniformBufferArray::createOrUpdate(
     const size_t id, const void* data, const std::size_t size, gfx::Context& context, bool persistent) {
-    // Save CPU-side copy for Command Export export
+    // Save a CPU-side copy for Command Export.
     if (data && size > 0) {
         auto& copy = cpuCopies[id];
         copy.resize(size);

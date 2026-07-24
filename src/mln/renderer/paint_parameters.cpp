@@ -11,6 +11,8 @@
 #include <mln/util/convert.hpp>
 #include <mln/util/logging.hpp>
 
+#include <limits>
+
 #if MLN_RENDER_BACKEND_OPENGL
 #include <mln/gl/context.hpp>
 #include <mln/shaders/gl/legacy/clipping_mask_program.hpp>
@@ -31,6 +33,10 @@
 #include <mln/shaders/vulkan/clipping_mask.hpp>
 #include <mln/vulkan/context.hpp>
 #endif // MLN_RENDER_BACKEND_VULKAN
+
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+#include <mln/command_export/draw_command.hpp>
+#endif
 
 namespace mln {
 
@@ -181,6 +187,17 @@ void PaintParameters::clearStencil() {
     context.renderingStats().stencilClears++;
 #elif MLN_RENDER_BACKEND_OPENGL
     context.clearStencilBuffer(0b00000000);
+#elif MLN_RENDER_BACKEND_COMMAND_EXPORT
+    // Command Export has no mid-pass stencil clear call. Preserve the operation
+    // in FrameData at its exact native ordering point; the consumer replays this
+    // control command by clearing (or replacing across) the stencil target.
+    auto& command = command_export::getFrameData().addCommand(
+        command_export::ShaderType::ClippingMask, command_export::DrawModeType::Triangles, nullptr, 0, 0, nullptr, 0);
+    command.layerIndex = command_export::getCurrentLayerIndex();
+    command.subLayerIndex = std::numeric_limits<int32_t>::min();
+    command.stencilReference = 0;
+    command.stencilMode = command_export::StencilModeType::Clear;
+    context.renderingStats().stencilClears++;
 #endif
 }
 
@@ -203,7 +220,19 @@ bool PaintParameters::renderTileClippingMasks(const RenderTiles& renderTiles) {
         clearStencil();
     }
 
-#if MLN_RENDER_BACKEND_WEBGPU
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+    // Assign the same ordered per-tile references as the immediate backends.
+    // TileLayerGroup emits the actual quad commands after this map is ready.
+    for (const auto& tileRef : *renderTiles) {
+        const auto& tileID = tileRef.get().id;
+        const int32_t stencilID = nextStencilID;
+        const auto result = tileClippingMaskIDs.insert(std::make_pair(tileID, stencilID));
+        if (result.second) {
+            nextStencilID++;
+        }
+    }
+    context.renderingStats().stencilUpdates++;
+#elif MLN_RENDER_BACKEND_WEBGPU
     std::vector<shaders::ClipUBO> tileUBOs;
     for (const auto& tileRef : *renderTiles) {
         const auto& tileID = tileRef.get().id;

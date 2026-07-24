@@ -1,12 +1,13 @@
 #include <mln/command_export/context.hpp>
 #include <mln/command_export/command_encoder.hpp>
+#include <mln/command_export/dynamic_texture.hpp>
 #include <mln/command_export/drawable_builder.hpp>
 #include <mln/command_export/layer_group.hpp>
 #include <mln/command_export/render_pass.hpp>
 #include <mln/command_export/texture2d.hpp>
 #include <mln/command_export/tile_layer_group.hpp>
 #include <mln/command_export/upload_pass.hpp>
-#include <mln/gfx/dynamic_texture.hpp>
+#include <mln/gfx/offscreen_texture.hpp>
 #include <mln/gfx/shader_registry.hpp>
 #include <mln/shaders/shader_program_base.hpp>
 #include <mln/gfx/vertex_attribute.hpp>
@@ -37,9 +38,9 @@ gfx::UniqueDrawableBuilder Context::createDrawableBuilder(std::string name) {
 }
 
 gfx::UniformBufferPtr Context::createUniformBuffer(const void* data,
-                                                     std::size_t size,
-                                                     bool /*persistent*/,
-                                                     bool /*ssbo*/) {
+                                                   std::size_t size,
+                                                   bool /*persistent*/,
+                                                   bool /*ssbo*/) {
     return std::make_shared<UniformBuffer>(data, size);
 }
 
@@ -47,23 +48,18 @@ gfx::UniqueUniformBufferArray Context::createLayerUniformBufferArray() {
     return std::make_unique<UniformBufferArray>();
 }
 
-gfx::ShaderProgramBasePtr Context::getGenericShader(gfx::ShaderRegistry& shaders,
-                                                     const std::string& name) {
+gfx::ShaderProgramBasePtr Context::getGenericShader(gfx::ShaderRegistry& shaders, const std::string& name) {
     const auto shaderGroup = shaders.getShaderGroup(name);
     if (!shaderGroup) return {};
     auto shader = shaderGroup->getOrCreateShader(*this, {});
     return std::static_pointer_cast<gfx::ShaderProgramBase>(std::move(shader));
 }
 
-TileLayerGroupPtr Context::createTileLayerGroup(int32_t layerIndex,
-                                                  std::size_t initialCapacity,
-                                                  std::string name) {
+TileLayerGroupPtr Context::createTileLayerGroup(int32_t layerIndex, std::size_t initialCapacity, std::string name) {
     return std::make_shared<command_export::TileLayerGroup>(layerIndex, initialCapacity, std::move(name));
 }
 
-LayerGroupPtr Context::createLayerGroup(int32_t layerIndex,
-                                          std::size_t initialCapacity,
-                                          std::string name) {
+LayerGroupPtr Context::createLayerGroup(int32_t layerIndex, std::size_t initialCapacity, std::string name) {
     return std::make_shared<command_export::LayerGroup>(layerIndex, initialCapacity, std::move(name));
 }
 
@@ -72,7 +68,7 @@ gfx::Texture2DPtr Context::createTexture2D() {
 }
 
 gfx::DynamicTexturePtr Context::createDynamicTexture(Size size, gfx::TexturePixelType pixelType) {
-    return std::make_shared<gfx::DynamicTexture>(*this, size, pixelType);
+    return std::make_shared<command_export::DynamicTexture>(*this, size, pixelType);
 }
 
 RenderTargetPtr Context::createRenderTarget(const Size /*size*/, const gfx::TextureChannelDataType /*type*/) {
@@ -109,9 +105,9 @@ void Context::visualizeDepthBuffer(float) {}
 void Context::clearStencilBuffer(int32_t) {}
 
 bool Context::emplaceOrUpdateUniformBuffer(gfx::UniformBufferPtr& buffer,
-                                            const void* data,
-                                            std::size_t size,
-                                            bool persistent) {
+                                           const void* data,
+                                           std::size_t size,
+                                           bool persistent) {
     if (buffer) {
         buffer->update(data, size);
     } else {

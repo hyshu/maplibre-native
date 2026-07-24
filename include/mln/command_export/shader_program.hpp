@@ -8,8 +8,8 @@
 namespace mln {
 namespace command_export {
 
-/// Stub shader program for CommandExport backend.
-/// No GPU compilation; shader selection happens in the external renderer.
+/// Stub shader program for the Command Export backend.
+/// No GPU compilation; the external consumer selects shaders.
 class ShaderProgram final : public gfx::ShaderProgramBase {
 public:
     ShaderProgram(std::string name)
@@ -19,17 +19,11 @@ public:
 
     const std::string_view typeName() const noexcept override { return shaderName; }
 
-    std::optional<size_t> getSamplerLocation(const size_t) const override {
-        return std::nullopt;
-    }
+    std::optional<size_t> getSamplerLocation(const size_t) const override { return std::nullopt; }
 
-    const gfx::VertexAttributeArray& getVertexAttributes() const override {
-        return vertexAttributes;
-    }
+    const gfx::VertexAttributeArray& getVertexAttributes() const override { return vertexAttributes; }
 
-    const gfx::VertexAttributeArray& getInstanceAttributes() const override {
-        return instanceAttributes;
-    }
+    const gfx::VertexAttributeArray& getInstanceAttributes() const override { return instanceAttributes; }
 
 private:
     std::string shaderName;

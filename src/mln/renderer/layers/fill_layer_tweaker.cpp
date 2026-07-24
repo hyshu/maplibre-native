@@ -225,8 +225,15 @@ void FillLayerTweaker::execute(LayerGroupBase& layerGroup, const PaintParameters
                     .matrix = util::cast<float>(matrix),
                     .ratio = 1.0f / tileID.pixelsToTileUnits(1.0f, parameters.state.getZoom()),
                     .pad1 = 0,
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+                    // Command Export consumes these otherwise-unused fields for
+                    // data-driven triangulated outline interpolation.
+                    .pad2 = std::get<0>(binders->get<FillOutlineColor>()->interpolationFactor(zoom)),
+                    .pad3 = std::get<0>(binders->get<FillOpacity>()->interpolationFactor(zoom))
+#else
                     .pad2 = 0,
                     .pad3 = 0
+#endif
                 };
 
 #if !MLN_UBO_CONSOLIDATION

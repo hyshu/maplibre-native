@@ -23,6 +23,12 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/renderer/pattern_atlas.test.cpp
     ${PROJECT_SOURCE_DIR}/test/renderer/renderable.test.cpp
     ${PROJECT_SOURCE_DIR}/test/renderer/shader_registry.test.cpp
+    $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/circle_vertex_data.test.cpp>
+    $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/fill_extrusion_vertex_data.test.cpp>
+    $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/fill_vertex_data.test.cpp>
+    $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/line_vertex_data.test.cpp>
+    $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/dynamic_texture.test.cpp>
+    $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/texture2d.test.cpp>
     $<$<BOOL:${MLN_WITH_WEBGPU}>:${PROJECT_SOURCE_DIR}/test/renderer/wgsl_preprocessor.test.cpp>
     ${PROJECT_SOURCE_DIR}/test/sprite/sprite_loader.test.cpp
     ${PROJECT_SOURCE_DIR}/test/sprite/sprite_parser.test.cpp
