@@ -466,7 +466,6 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
     }
 
     // Symbol placement.
-    assert((updateParameters->mode == MapMode::Tile) || !placedSymbolDataCollected);
     bool symbolBucketsChanged = false;
     bool symbolBucketsAdded = false;
     std::set<std::string> usedSymbolLayers;
@@ -506,6 +505,7 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
         symbolBucketsChanged |= renderTreeParameters->placementChanged;
         if (renderTreeParameters->placementChanged) {
             Mutable<Placement> placement = Placement::create(updateParameters, placementController.getPlacement());
+            placement->collectPlacedSymbolData(placedSymbolDataCollected);
             placement->placeLayers(layersNeedPlacement);
             placementController.setPlacement(std::move(placement));
             crossTileSymbolIndex.pruneUnusedLayers(usedSymbolLayers);

@@ -855,6 +855,9 @@ void SymbolLayout::addFeature(const std::size_t layoutFeatureIndex,
                                          variableAnchorOffsets,
                                          allowVerticalPlacement,
                                          iconType);
+            if (feature.icon) {
+                symbolInstances.back().setIconImageID(feature.icon->id());
+            }
 
             if (sortFeaturesByKey) {
                 if (!sortKeyRanges.empty() && sortKeyRanges.back().sortKey == feature.sortKey) {

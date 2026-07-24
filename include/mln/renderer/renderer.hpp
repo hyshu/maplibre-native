@@ -6,6 +6,7 @@
 #include <mln/util/geo.hpp>
 #include <mln/util/geojson.hpp>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -25,6 +26,8 @@ class RendererBackend;
 struct PlacedSymbolData {
     /// Contents of the label
     std::u16string key;
+    /// Stable identity assigned by CrossTileSymbolIndex
+    uint32_t crossTileID = 0;
     /// If symbol contains text, text collision box in viewport coordinates
     std::optional<mapbox::geometry::box<float>> textCollisionBox;
     /// If symbol contains icon, icon collision box in viewport coordinates
@@ -37,8 +40,21 @@ struct PlacedSymbolData {
     bool intersectsTileBorder;
     /// Viewport padding ({viewportPadding, viewportPadding} is a coordinate of the tile's top-left corner)
     float viewportPadding;
+    /// Geographic symbol anchor projected into padded viewport coordinates
+    Point<float> anchorPoint;
     /// Layer id (leader of the symbol layout group)
     std::string layer;
+    /// Evaluated icon-image ID (empty when the symbol has no icon)
+    std::string icon;
+    /// Feature- and zoom-evaluated text-size used for placement
+    float textSize = 16;
+    /// Feature- and zoom-evaluated icon-size used for placement
+    float iconSize = 1;
+    /// Label angle in radians (screen space, y-down). Non-zero only for
+    /// line-placed symbols, derived from the collision-circle chain.
+    float textAngle = 0;
+    /// True when the symbol uses line placement (street names)
+    bool alongLine = false;
 };
 
 class Renderer {
@@ -123,9 +139,7 @@ public:
 #endif
 
     /// Walk all drawables with exported data.
-    using DrawableVisitor = std::function<void(
-        const std::string& shaderName,
-        const gfx::Drawable::ExportedData& data)>;
+    using DrawableVisitor = std::function<void(const std::string& shaderName, const gfx::Drawable::ExportedData& data)>;
     void visitDrawables(const DrawableVisitor& visitor) const;
 
 private:

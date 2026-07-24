@@ -11,6 +11,31 @@ using namespace std::numbers;
 
 namespace mln {
 
+namespace {
+
+constexpr float evaluateSizeForFeatureImpl(const ZoomEvaluatedSize& zoomEvaluatedSize,
+                                           float lowerSize,
+                                           float upperSize) noexcept {
+    if (zoomEvaluatedSize.isFeatureConstant) {
+        return zoomEvaluatedSize.size;
+    }
+    if (zoomEvaluatedSize.isZoomConstant) {
+        return lowerSize;
+    }
+    return lowerSize + zoomEvaluatedSize.sizeT * (upperSize - lowerSize);
+}
+
+static_assert(evaluateSizeForFeatureImpl({true, true, 0, 16, 16}, 8, 24) == 16,
+              "feature-constant size must use the zoom-evaluated value");
+static_assert(evaluateSizeForFeatureImpl({true, false, 0, 0, 0}, 8, 24) == 8,
+              "source-function size must use the feature value");
+static_assert(evaluateSizeForFeatureImpl({false, false, 0.25, 0, 0}, 8, 24) == 12,
+              "composite size must interpolate the feature's covering-stop values");
+static_assert(evaluateSizeForFeatureImpl({true, true, 0, 0, 0}, 8, 24) == 0,
+              "an intentional zero size must not be replaced by a fallback");
+
+} // namespace
+
 /*
  * # Overview of coordinate spaces
  *
@@ -159,15 +184,7 @@ PointAndCameraDistance project(const Point<float>& point, const mat4& matrix) {
 }
 
 float evaluateSizeForFeature(const ZoomEvaluatedSize& zoomEvaluatedSize, const PlacedSymbol& placedSymbol) {
-    if (zoomEvaluatedSize.isFeatureConstant) {
-        return zoomEvaluatedSize.size;
-    } else {
-        if (zoomEvaluatedSize.isZoomConstant) {
-            return placedSymbol.lowerSize;
-        } else {
-            return placedSymbol.lowerSize + zoomEvaluatedSize.sizeT * (placedSymbol.upperSize - placedSymbol.lowerSize);
-        }
-    }
+    return evaluateSizeForFeatureImpl(zoomEvaluatedSize, placedSymbol.lowerSize, placedSymbol.upperSize);
 }
 
 bool isVisible(const vec4& anchorPos, const std::array<double, 2>& clippingBuffer) {

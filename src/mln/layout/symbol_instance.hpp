@@ -165,6 +165,11 @@ public:
     uint32_t getCrossTileID() const { return crossTileID; }
     void setCrossTileID(uint32_t x) { crossTileID = x; }
 
+    // Evaluated icon-image ID for this feature (empty when the symbol has no
+    // icon). Exported to PlacedSymbolData for the Command Export symbol overlay.
+    const std::string& getIconImageID() const { return iconImageID; }
+    void setIconImageID(std::string id) { iconImageID = std::move(id); }
+
     std::optional<size_t>& refPlacedRightTextIndex() { return placedRightTextIndex; }
     std::optional<size_t>& refPlacedCenterTextIndex() { return placedCenterTextIndex; }
     std::optional<size_t>& refPlacedLeftTextIndex() { return placedLeftTextIndex; }
@@ -251,6 +256,7 @@ private:
     SYM_GUARD_VALUE(27)
     uint32_t crossTileID = 0;
     SYM_GUARD_VALUE(28)
+    std::string iconImageID;
 #if MLN_SYMBOL_GUARDS
     mutable bool isFailed = false;
 #endif

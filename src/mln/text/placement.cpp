@@ -199,6 +199,7 @@ Placement::Placement()
 Placement::~Placement() = default;
 
 void Placement::placeLayers(const RenderLayerReferences& layers) {
+    placedSymbolsData_.clear();
     for (auto it = layers.crbegin(); it != layers.crend(); ++it) {
         std::set<uint32_t> seenCrossTileIDs;
         placeLayer(*it, seenCrossTileIDs);
@@ -286,6 +287,8 @@ JointPlacement Placement::placeSymbol(const SymbolInstance& symbolInstance, cons
     bool placeText = false;
     bool placeIcon = false;
     bool offscreen = true;
+    float evaluatedTextSize = style::TextSize::defaultValue();
+    float evaluatedIconSize = style::IconSize::defaultValue();
     std::pair<bool, bool> placed{false, false};
     std::pair<bool, bool> placedVerticalText{false, false};
     std::pair<bool, bool> placedVerticalIcon{false, false};
@@ -293,7 +296,7 @@ JointPlacement Placement::placeSymbol(const SymbolInstance& symbolInstance, cons
     std::optional<size_t> horizontalTextIndex = symbolInstance.getDefaultHorizontalPlacedTextIndex();
     if (horizontalTextIndex) {
         const PlacedSymbol& placedSymbol = bucket.text.placedSymbols.at(*horizontalTextIndex);
-        const float fontSize = evaluateSizeForFeature(ctx.partiallyEvaluatedTextSize, placedSymbol);
+        evaluatedTextSize = evaluateSizeForFeature(ctx.partiallyEvaluatedTextSize, placedSymbol);
 
         const auto updatePreviousOrientationIfNotPlaced = [&](bool isPlaced) {
             if (bucket.allowVerticalPlacement && !isPlaced && getPrevPlacement()) {
@@ -335,7 +338,7 @@ JointPlacement Placement::placeSymbol(const SymbolInstance& symbolInstance, cons
                                                                  ctx.pixelRatio,
                                                                  placedSymbol,
                                                                  ctx.scale,
-                                                                 fontSize,
+                                                                 evaluatedTextSize,
                                                                  ctx.textAllowOverlap,
                                                                  ctx.pitchTextWithMap,
                                                                  showCollisionBoxes,
@@ -429,7 +432,7 @@ JointPlacement Placement::placeSymbol(const SymbolInstance& symbolInstance, cons
                                                                 ctx.pixelRatio,
                                                                 placedSymbol,
                                                                 ctx.scale,
-                                                                fontSize,
+                                                                evaluatedTextSize,
                                                                 allowOverlap,
                                                                 ctx.pitchTextWithMap,
                                                                 showCollisionBoxes,
@@ -446,7 +449,7 @@ JointPlacement Placement::placeSymbol(const SymbolInstance& symbolInstance, cons
                             ctx.pixelRatio,
                             placedSymbol,
                             ctx.scale,
-                            fontSize,
+                            evaluatedTextSize,
                             ctx.iconAllowOverlap,
                             ctx.pitchTextWithMap, // TODO: shall it be pitchIconWithMap?
                             showCollisionBoxes,
@@ -535,7 +538,7 @@ JointPlacement Placement::placeSymbol(const SymbolInstance& symbolInstance, cons
 
         const auto& iconBuffer = symbolInstance.hasSdfIcon() ? bucket.sdfIcon : bucket.icon;
         const PlacedSymbol& placedSymbol = iconBuffer.placedSymbols.at(*symbolInstance.getPlacedIconIndex());
-        const float fontSize = evaluateSizeForFeature(ctx.partiallyEvaluatedIconSize, placedSymbol);
+        evaluatedIconSize = evaluateSizeForFeature(ctx.partiallyEvaluatedIconSize, placedSymbol);
         const auto& placeIconFeature = [&](const CollisionFeature& collisionFeature) {
             return collisionIndex.placeFeature(collisionFeature,
                                                shift,
@@ -544,7 +547,7 @@ JointPlacement Placement::placeSymbol(const SymbolInstance& symbolInstance, cons
                                                ctx.pixelRatio,
                                                placedSymbol,
                                                ctx.scale,
-                                               fontSize,
+                                               evaluatedIconSize,
                                                ctx.iconAllowOverlap,
                                                ctx.pitchTextWithMap,
                                                showCollisionBoxes,
@@ -638,7 +641,8 @@ JointPlacement Placement::placeSymbol(const SymbolInstance& symbolInstance, cons
     JointPlacement result(
         placeText || ctx.alwaysShowText, placeIcon || ctx.alwaysShowIcon, offscreen || bucket.justReloaded);
     placements.emplace(symbolInstance.getCrossTileID(), result);
-    newSymbolPlaced(symbolInstance, ctx, result, ctx.placementType, textBoxes, iconBoxes);
+    newSymbolPlaced(
+        symbolInstance, ctx, result, ctx.placementType, evaluatedTextSize, evaluatedIconSize, textBoxes, iconBoxes);
     return result;
 }
 
@@ -1323,8 +1327,96 @@ bool Placement::hasTransitions(TimePoint now) const {
 }
 
 const std::vector<PlacedSymbolData>& Placement::getPlacedSymbolsData() const {
-    const static std::vector<PlacedSymbolData> data;
-    return data;
+    return placedSymbolsData_;
+}
+
+void Placement::newSymbolPlaced(const SymbolInstance& symbol,
+                                const PlacementContext& ctx,
+                                const JointPlacement& placement,
+                                style::SymbolPlacementType,
+                                float evaluatedTextSize,
+                                float evaluatedIconSize,
+                                const std::vector<ProjectedCollisionBox>& textCollisionBoxes,
+                                const std::vector<ProjectedCollisionBox>& iconCollisionBoxes) {
+    if (!placedSymbolDataCollected_) return;
+
+    struct ExportGeometry {
+        std::optional<mapbox::geometry::box<float>> bounds;
+        bool hasCircle = false;
+        float angle = 0;
+    };
+
+    // The effective text placement can differ from the layer's symbol-placement
+    // (for example, viewport-aligned text on a line uses a box). Icons also use
+    // boxes regardless of symbol-placement. Export the actual projected geometry
+    // and only mark text as line-following when it contains collision circles.
+    const auto extractGeometry = [](const std::vector<ProjectedCollisionBox>& boxes) {
+        ExportGeometry result;
+        bool hasGeometry = false;
+        float minX = 0, minY = 0, maxX = 0, maxY = 0;
+        Point<float> first{0, 0}, last{0, 0};
+
+        const auto expandBounds = [&](float x1, float y1, float x2, float y2) {
+            if (!hasGeometry) {
+                minX = x1;
+                minY = y1;
+                maxX = x2;
+                maxY = y2;
+                hasGeometry = true;
+            } else {
+                minX = std::min(minX, x1);
+                minY = std::min(minY, y1);
+                maxX = std::max(maxX, x2);
+                maxY = std::max(maxY, y2);
+            }
+        };
+
+        for (const auto& b : boxes) {
+            if (b.isBox()) {
+                const auto& box = b.box();
+                expandBounds(box.min.x, box.min.y, box.max.x, box.max.y);
+            } else if (b.isCircle()) {
+                const auto& circle = b.circle();
+                const Point<float> center{static_cast<float>(circle.center.x), static_cast<float>(circle.center.y)};
+                if (!result.hasCircle) first = center;
+                last = center;
+                result.hasCircle = true;
+                expandBounds(center.x - circle.radius,
+                             center.y - circle.radius,
+                             center.x + circle.radius,
+                             center.y + circle.radius);
+            }
+        }
+
+        if (hasGeometry) {
+            result.bounds = mapbox::geometry::box<float>({minX, minY}, {maxX, maxY});
+        }
+        if (result.hasCircle && (first.x != last.x || first.y != last.y)) {
+            result.angle = std::atan2(last.y - first.y, last.x - first.x);
+        }
+        return result;
+    };
+
+    const auto textGeometry = extractGeometry(textCollisionBoxes);
+    const auto iconGeometry = extractGeometry(iconCollisionBoxes);
+
+    PlacedSymbolData symbolData{
+        .key = symbol.getKey(),
+        .crossTileID = symbol.getCrossTileID(),
+        .textCollisionBox = textGeometry.bounds,
+        .iconCollisionBox = iconGeometry.bounds,
+        .textPlaced = placement.text,
+        .iconPlaced = placement.icon,
+        .intersectsTileBorder = false,
+        .viewportPadding = collisionIndex.getViewportPadding(),
+        .anchorPoint = collisionIndex.projectPoint(ctx.getRenderTile().matrix, symbol.getAnchor().point),
+        .layer = ctx.getBucket().bucketLeaderID,
+        .icon = symbol.getIconImageID(),
+        .textSize = evaluatedTextSize,
+        .iconSize = evaluatedIconSize,
+        .textAngle = textGeometry.angle,
+        .alongLine = textGeometry.hasCircle};
+    placedSymbolsData_.emplace_back(std::move(symbolData));
 }
 
 const CollisionIndex& Placement::getCollisionIndex() const {
@@ -1397,6 +1489,8 @@ private:
                          const PlacementContext&,
                          const JointPlacement&,
                          style::SymbolPlacementType,
+                         float,
+                         float,
                          const std::vector<ProjectedCollisionBox>&,
                          const std::vector<ProjectedCollisionBox>&) override;
 
@@ -1645,6 +1739,8 @@ void TilePlacement::newSymbolPlaced(const SymbolInstance& symbol,
                                     const PlacementContext& ctx,
                                     const JointPlacement& placement,
                                     style::SymbolPlacementType placementType,
+                                    float evaluatedTextSize,
+                                    float evaluatedIconSize,
                                     const std::vector<ProjectedCollisionBox>& textCollisionBoxes,
                                     const std::vector<ProjectedCollisionBox>& iconCollisionBoxes) {
     if (!collectData || placementType != style::SymbolPlacementType::Point || shouldRetryPlacement(placement, ctx))
@@ -1664,14 +1760,20 @@ void TilePlacement::newSymbolPlaced(const SymbolInstance& symbol,
         assert(box.isBox());
         iconCollisionBox = box.box();
     }
-    PlacedSymbolData symbolData{.key = symbol.getKey(),
-                                .textCollisionBox = textCollisionBox,
-                                .iconCollisionBox = iconCollisionBox,
-                                .textPlaced = placement.text,
-                                .iconPlaced = placement.icon,
-                                .intersectsTileBorder = !placement.skipFade && populateIntersections,
-                                .viewportPadding = collisionIndex.getViewportPadding(),
-                                .layer = ctx.getBucket().bucketLeaderID};
+    PlacedSymbolData symbolData{
+        .key = symbol.getKey(),
+        .crossTileID = symbol.getCrossTileID(),
+        .textCollisionBox = textCollisionBox,
+        .iconCollisionBox = iconCollisionBox,
+        .textPlaced = placement.text,
+        .iconPlaced = placement.icon,
+        .intersectsTileBorder = !placement.skipFade && populateIntersections,
+        .viewportPadding = collisionIndex.getViewportPadding(),
+        .anchorPoint = collisionIndex.projectPoint(ctx.getRenderTile().matrix, symbol.getAnchor().point),
+        .layer = ctx.getBucket().bucketLeaderID,
+        .icon = symbol.getIconImageID(),
+        .textSize = evaluatedTextSize,
+        .iconSize = evaluatedIconSize};
     placedSymbolsData.emplace_back(std::move(symbolData));
 }
 

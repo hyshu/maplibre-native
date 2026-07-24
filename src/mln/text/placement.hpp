@@ -126,7 +126,7 @@ public:
     virtual float symbolFadeChange(TimePoint now) const;
     virtual bool hasTransitions(TimePoint now) const;
     virtual bool transitionsEnabled() const;
-    virtual void collectPlacedSymbolData(bool /*enable*/) {}
+    virtual void collectPlacedSymbolData(bool enable) { placedSymbolDataCollected_ = enable; }
     virtual const std::vector<PlacedSymbolData>& getPlacedSymbolsData() const;
 
     const CollisionIndex& getCollisionIndex() const;
@@ -152,9 +152,10 @@ protected:
                                  const PlacementContext&,
                                  const JointPlacement&,
                                  style::SymbolPlacementType,
-                                 const std::vector<ProjectedCollisionBox>& /*textBoxes*/,
-                                 const std::vector<ProjectedCollisionBox>& /*iconBoxes*/
-    ) {}
+                                 float evaluatedTextSize,
+                                 float evaluatedIconSize,
+                                 const std::vector<ProjectedCollisionBox>& textBoxes,
+                                 const std::vector<ProjectedCollisionBox>& iconBoxes);
     // Implementation specific hooks, which get called during a symbol bucket placement.
     virtual std::optional<CollisionBoundaries> getAvoidEdges(const SymbolBucket&, const mat4& /*posMatrix*/) {
         return std::nullopt;
@@ -206,6 +207,10 @@ protected:
     std::vector<ProjectedCollisionBox> iconBoxes;
     // Used for debug purposes.
     std::unordered_map<const CollisionFeature*, std::vector<ProjectedCollisionBox>> collisionCircles;
+
+    // Placed symbol data collection (works in all map modes)
+    bool placedSymbolDataCollected_ = false;
+    std::vector<PlacedSymbolData> placedSymbolsData_;
 };
 
 } // namespace mln

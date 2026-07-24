@@ -66,6 +66,8 @@ public:
 
     float getViewportPadding() const { return viewportPadding; }
 
+    Point<float> projectPoint(const mat4& posMatrix, const Point<float>& point) const;
+
 private:
     bool isOffscreen(const CollisionBoundaries&) const;
     bool isInsideGrid(const CollisionBoundaries&) const;
@@ -97,7 +99,6 @@ private:
     std::pair<float, float> projectAnchor(const mat4& posMatrix, const Point<float>& point) const;
     std::pair<Point<float>, float> projectAndGetPerspectiveRatio(const mat4& posMatrix,
                                                                  const Point<float>& point) const;
-    Point<float> projectPoint(const mat4& posMatrix, const Point<float>& point) const;
     CollisionBoundaries getProjectedCollisionBoundaries(const mat4& posMatrix,
                                                         Point<float> shift,
                                                         float textPixelRatio,
