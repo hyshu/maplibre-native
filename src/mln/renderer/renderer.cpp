@@ -1,4 +1,6 @@
 #include <mln/renderer/renderer.hpp>
+#include <mln/renderer/layer_group.hpp>
+#include <mln/shaders/shader_defines.hpp>
 
 #include <mln/annotation/annotation_manager.hpp>
 #include <mln/gfx/backend_scope.hpp>
@@ -180,5 +182,23 @@ void Renderer::enableAndroidEmulatorGoldfishMitigation(bool enable) {
     impl->orchestrator.enableAndroidEmulatorGoldfishMitigation(enable);
 }
 #endif
+
+void Renderer::visitDrawables(const DrawableVisitor& visitor) const {
+    impl->orchestrator.visitLayerGroups([&](LayerGroupBase& layerGroup) {
+        const auto& layerUbos = layerGroup.getUniformBuffers();
+
+        visitLayerGroupDrawables(layerGroup, [&](gfx::Drawable& drawable) {
+            const auto& shader = drawable.getShader();
+            if (!shader) return;
+
+            // Merge layer UBO cpuData into drawable's cpuCopies
+            drawable.mutableUniformBuffers().copyCpuDataFrom(layerUbos);
+
+            gfx::Drawable::ExportedData data;
+            drawable.exportData(data);
+            visitor(drawable.getName(), data);
+        });
+    });
+}
 
 } // namespace mln

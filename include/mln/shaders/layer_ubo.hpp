@@ -60,7 +60,9 @@ static_assert(sizeof(GlobalPlatformParamsUBO) == 16);
 
 enum {
     idGlobalPaintParamsUBO,
-#if MLN_RENDER_BACKEND_METAL
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+    idGlobalUBOIndex,
+#elif MLN_RENDER_BACKEND_METAL
     idGlobalUBOIndex,
 #elif MLN_RENDER_BACKEND_VULKAN
     idGlobalPlatformParamsUBO,
@@ -70,7 +72,12 @@ enum {
     globalUBOCount
 };
 
+// Disabled for Command Export export: per-drawable UBOs avoid stride issues
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+#define MLN_UBO_CONSOLIDATION 0
+#else
 #define MLN_UBO_CONSOLIDATION (MLN_RENDER_BACKEND_METAL || MLN_RENDER_BACKEND_VULKAN || MLN_RENDER_BACKEND_WEBGPU)
+#endif
 #define MLN_USE_FILL_EXTRUSION_INSTANCING (MLN_RENDER_BACKEND_METAL || MLN_RENDER_BACKEND_VULKAN)
 #define MLN_USE_SYMBOL_INSTANCING (MLN_RENDER_BACKEND_METAL || MLN_RENDER_BACKEND_VULKAN)
 

@@ -3,9 +3,44 @@
   <img src="https://github.com/user-attachments/assets/cee8376b-9812-40ff-91c6-2d53f9581b83#gh-dark-mode-only" alt="MapLibre Logo" width="200">
 </p>
 
-# MapLibre Native
+# MapLibre Native (Command Export fork)
 
 [![codecov](https://codecov.io/github/maplibre/maplibre-native/branch/main/graph/badge.svg?token=8ZQRRY56ZA)](https://codecov.io/github/maplibre/maplibre-native) [![](https://img.shields.io/badge/Slack-%23maplibre--native-2EB67D?logo=slack)](https://slack.openstreetmap.us/)
+
+## Status / disclaimer (this fork)
+
+**This repository is not production-ready and is not intended for real-world
+use yet.**
+
+It is a **fork** of the official
+[maplibre/maplibre-native](https://github.com/maplibre/maplibre-native) project.
+On top of upstream `main` it carries experimental **Command Export** backend
+commits used by
+[zoomellc/maplibre_flutter_gpu](https://github.com/zoomellc/maplibre_flutter_gpu).
+
+Unless there is a specific reason not to, we **rebase** those additional
+Command Export commits onto the latest upstream `main` so they stay on tip.
+Expect force-pushes and rewritten commit SHAs on this branch as a normal
+part of maintenance.
+
+This fork is public mainly so **GitHub Actions** (and related CI) can run
+against a hosted copy of the tree. Treat the history, branches, and tags here
+as an experimental work-in-progress snapshot: they may change without notice.
+
+When we ship a real public release of the Command Export work, we plan to:
+
+1. Create a **new repository** for the polished fork (or contribution), and
+2. **Reorganize / rewrite commits** into a clean history suitable for
+   consumers and for upstream contribution review.
+
+This fork is **not** a drop-in replacement for official MapLibre Native
+releases, and it is **not** published as a standalone product (for example it
+is not shipped on Maven Central, CocoaPods, or similar channels from this
+repo). Prefer upstream
+[maplibre/maplibre-native](https://github.com/maplibre/maplibre-native) for
+production apps.
+
+---
 
 MapLibre Native is a free and open-source library for publishing maps in your apps and desktop applications on various platforms. Fast displaying of maps is possible thanks to GPU-accelerated vector tile rendering.
 

@@ -1,0 +1,39 @@
+if(NOT MLN_WITH_COMMAND_EXPORT)
+    return()
+endif()
+
+message(STATUS "Configuring Command Export renderer backend")
+target_compile_definitions(
+        mbgl-core
+        PUBLIC
+        MLN_RENDER_BACKEND_COMMAND_EXPORT=1
+)
+list(APPEND
+        INCLUDE_FILES
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/command_encoder.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/context.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/drawable.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/drawable_builder.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/layer_group.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/render_pass.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/renderer_backend.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/texture2d.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/tile_layer_group.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/uniform_buffer.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/upload_pass.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/draw_command.hpp
+)
+list(APPEND
+        SRC_FILES
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/command_encoder.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/context.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/drawable.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/drawable_builder.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/layer_group.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/renderer_backend.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/texture2d.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/tile_layer_group.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/uniform_buffer.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/upload_pass.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/draw_command.cpp
+)

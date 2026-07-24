@@ -37,6 +37,11 @@ void UniformBuffer::update(const void* data, std::size_t dataSize) {
     buffer.getContext().renderingStats().numUniformUpdates++;
     buffer.getContext().renderingStats().uniformUpdateBytes += dataSize;
     buffer.update(data, dataSize, /*offset=*/0);
+
+    // Save CPU-side copy for Command Export export
+    if (data && dataSize > 0) {
+        setCpuData(data, dataSize);
+    }
 }
 
 void UniformBufferArray::bindMtl(RenderPass& renderPass) const noexcept {

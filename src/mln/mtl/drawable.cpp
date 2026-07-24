@@ -672,5 +672,62 @@ void Drawable::upload(gfx::UploadPass& uploadPass_) {
     attributeUpdateTime = util::MonotonicTimer::now();
 }
 
+bool Drawable::exportData(ExportedData& out) const {
+    out = {};
+    if (!impl || !impl->indexes) return false;
+
+    if (!impl->attributeBindings.empty()) {
+        for (const auto& binding : impl->attributeBindings) {
+            if (binding && binding->vertexBufferResource) {
+                const auto* res = static_cast<const VertexBufferResource*>(binding->vertexBufferResource);
+                out.vertexData = res->contents();
+                out.vertexBytes = res->getSizeInBytes();
+                break;
+            }
+        }
+    }
+
+    auto* metalBuf = getMetalBuffer(impl->indexes);
+    if (metalBuf) {
+        out.indexData = static_cast<const uint16_t*>(metalBuf->contents());
+        out.indexCount = impl->indexes->elements();
+    }
+
+    out.uboIndex = uboIndex;
+
+    // Drawable UBO (index 2): try cpuCopies first, then UBO's own cpuData
+    {
+        auto [d, s] = impl->uniformBuffers.getCpuCopy(2);
+        if (!d || s == 0) {
+            const auto& ub = impl->uniformBuffers.get(2);
+            if (ub && !ub->getCpuData().empty()) {
+                d = ub->getCpuData().data();
+                s = ub->getCpuData().size();
+            }
+        }
+        out.drawableUbo = d;
+        out.drawableUboSize = s;
+    }
+
+    // EvaluatedProps UBO: try indices 5 (fill) and 4 (line), prefer 48-byte entries
+    for (size_t idx : {5, 4}) {
+        auto [p, s] = impl->uniformBuffers.getCpuCopy(idx);
+        if (!p || s == 0) {
+            const auto& ub = impl->uniformBuffers.get(idx);
+            if (ub && !ub->getCpuData().empty()) {
+                p = ub->getCpuData().data();
+                s = ub->getCpuData().size();
+            }
+        }
+        if (p && s > 0 && s <= 96) {
+            out.propsUbo = p;
+            out.propsUboSize = s;
+            break;
+        }
+    }
+
+    return out.vertexData != nullptr || out.indexData != nullptr;
+}
+
 } // namespace mtl
 } // namespace mln

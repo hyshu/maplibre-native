@@ -13,6 +13,7 @@ option(MLN_WITH_EGL "Build with EGL renderer" OFF)
 option(MLN_WITH_VULKAN "Build with Vulkan renderer" OFF)
 option(MLN_WITH_METAL "Build with Metal renderer" OFF)
 option(MLN_WITH_WEBGPU "Build with WebGPU renderer" OFF)
+option(MLN_WITH_COMMAND_EXPORT "Build with Command Export renderer" OFF)
 option(MLN_WITH_PMTILES "Build with PMTiles support" ON)
 option(MLN_WITH_WERROR "Make all compilation warnings errors" ON)
 option(MLN_USE_UNORDERED_DENSE "Use ankerl dense containers for performance" ON)
@@ -1016,6 +1017,7 @@ include(${PROJECT_SOURCE_DIR}/cmake/opengl.cmake)
 include(${PROJECT_SOURCE_DIR}/cmake/metal.cmake)
 include(${PROJECT_SOURCE_DIR}/cmake/vulkan.cmake)
 include(${PROJECT_SOURCE_DIR}/cmake/webgpu.cmake)
+include(${PROJECT_SOURCE_DIR}/cmake/command-export.cmake)
 
 # Harfbuzz text shaping
 set(SHAPE_TARGETS, "")
@@ -1148,6 +1150,7 @@ target_link_libraries(
         mbgl-vendor-unique_resource
         mbgl-vendor-vector-tile
         mbgl-vendor-wagyu
+        mbgl-vendor-filesystem
         mlt-cpp
         $<$<BOOL:${MLN_WITH_METAL}>:mbgl-vendor-metal-cpp>
         $<IF:$<BOOL:${MLN_USE_RUST}>,mbgl-rustutils,mbgl-vendor-csscolorparser>

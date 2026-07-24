@@ -35,6 +35,7 @@ public:
     ~Drawable() override;
 
     void draw(PaintParameters&) const override;
+    bool exportData(ExportedData& out) const override;
 
     struct DrawSegment;
     void setIndexData(gfx::IndexVectorBasePtr, std::vector<UniqueDrawSegment> segments) override;
