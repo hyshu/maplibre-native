@@ -247,7 +247,7 @@ struct FrameData {
 /// Global frame data — singleton, accessed from Drawable::draw() and FFI
 FrameData& getFrameData();
 
-/// Current layer index — set by LayerGroup::render(), read by Drawable::draw()
+/// Current layer index — set by LayerGroup::render(), read while exporting masks and drawables.
 void setCurrentLayerIndex(uint32_t idx);
 uint32_t getCurrentLayerIndex();
 

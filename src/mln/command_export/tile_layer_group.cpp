@@ -6,55 +6,11 @@
 #include <mln/renderer/paint_parameters.hpp>
 #include <mln/renderer/render_orchestrator.hpp>
 #include <mln/renderer/render_tile.hpp>
-#include <mln/util/constants.hpp>
-#include <mln/util/convert.hpp>
 
-#include <array>
-#include <cstring>
-#include <limits>
 #include <optional>
 
 namespace mln {
 namespace command_export {
-
-namespace {
-
-struct ClippingMaskVertex {
-    int16_t x;
-    int16_t y;
-};
-
-// Process-lifetime geometry: DrawCommand stores direct pointers and the consumer
-// reads them after native rendering has finished producing the frame.
-constexpr std::array<ClippingMaskVertex, 4> clippingMaskVertices{{
-    {0, 0},
-    {static_cast<int16_t>(util::EXTENT), 0},
-    {0, static_cast<int16_t>(util::EXTENT)},
-    {static_cast<int16_t>(util::EXTENT), static_cast<int16_t>(util::EXTENT)},
-}};
-constexpr std::array<uint16_t, 6> clippingMaskIndices{{0, 1, 2, 1, 2, 3}};
-static_assert(sizeof(ClippingMaskVertex) == 4);
-
-void emitClippingMaskCommand(PaintParameters& parameters, const UnwrappedTileID& tileID) {
-    const auto resolvedStencil = parameters.stencilModeForClipping(tileID);
-    const auto matrix = util::cast<float>(parameters.matrixForTile(tileID));
-
-    auto& command = getFrameData().addCommand(ShaderType::ClippingMask,
-                                              DrawModeType::Triangles,
-                                              clippingMaskVertices.data(),
-                                              sizeof(ClippingMaskVertex),
-                                              clippingMaskVertices.size(),
-                                              clippingMaskIndices.data(),
-                                              clippingMaskIndices.size());
-    command.layerIndex = getCurrentLayerIndex();
-    command.subLayerIndex = std::numeric_limits<int32_t>::min();
-    command.stencilReference = static_cast<uint32_t>(resolvedStencil.ref);
-    command.stencilMode = StencilModeType::ClippingMask;
-    std::memcpy(command.drawableUBO, matrix.data(), sizeof(matrix));
-    command.drawableUBOSize = sizeof(matrix);
-}
-
-} // namespace
 
 TileLayerGroup::TileLayerGroup(int32_t layerIndex, std::size_t initialCapacity, std::string name)
     : mln::TileLayerGroup(layerIndex, initialCapacity, std::move(name)) {}
@@ -72,9 +28,6 @@ void TileLayerGroup::render(RenderOrchestrator&, PaintParameters& parameters) {
 
     // Match the immediate backends: 3D drawables share one stencil reference
     // for the whole layer, while 2D drawables are clipped by per-tile masks.
-    // A mask is deliberately emitted for every TileLayerGroup, even when
-    // PaintParameters reuses the same ID map, so later command sorting cannot
-    // move a dependent layer ahead of the mask it needs.
     bool features3D = false;
     bool stencil3D = false;
     if (stencilTiles && !stencilTiles->empty()) {
@@ -93,9 +46,6 @@ void TileLayerGroup::render(RenderOrchestrator&, PaintParameters& parameters) {
         }
     } else if (stencilTiles && !stencilTiles->empty()) {
         parameters.renderTileClippingMasks(stencilTiles);
-        for (const auto& tile : *stencilTiles) {
-            emitClippingMaskCommand(parameters, tile.get().id);
-        }
     }
 
     const auto& layerUBOs = uniformBuffers;
