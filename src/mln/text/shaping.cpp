@@ -827,7 +827,14 @@ Shaping getShaping(const TaggedString& formattedString,
     // Command Export consumers can paint the same lines with platform text.
     for (std::size_t i = 0; i < reorderedLines.size(); i++) {
         if (i > 0) shaping.lineBrokenText.push_back(u'\n');
-        shaping.lineBrokenText.append(reorderedLines[i].rawText());
+        for (const auto ch : reorderedLines[i].rawText()) {
+            // BiDi line ranges include paragraph separators. The line
+            // separator above already represents each shaped line, so copying
+            // them would create an extra blank line in platform text.
+            if (ch != u'\n' && ch != u'\r') {
+                shaping.lineBrokenText.push_back(ch);
+            }
+        }
     }
     shapeLines(shaping,
                reorderedLines,
