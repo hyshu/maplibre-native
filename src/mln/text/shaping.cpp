@@ -822,6 +822,13 @@ Shaping getShaping(const TaggedString& formattedString,
     }
 
     Shaping shaping(translate[0], translate[1], writingMode);
+    // shapeLines replaces local-font characters with generated glyph IDs.
+    // Preserve the human-readable, line-broken text before that mutation so
+    // Command Export consumers can paint the same lines with platform text.
+    for (std::size_t i = 0; i < reorderedLines.size(); i++) {
+        if (i > 0) shaping.lineBrokenText.push_back(u'\n');
+        shaping.lineBrokenText.append(reorderedLines[i].rawText());
+    }
     shapeLines(shaping,
                reorderedLines,
                spacing,

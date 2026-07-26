@@ -264,6 +264,7 @@ SymbolLayout::SymbolLayout(const BucketParameters& parameters,
                     ft.formattedText->addImageSection(section.image->id());
                 }
             }
+            ft.originalText = ft.formattedText->rawText();
 
             const bool canVerticalizeText = layout->get<TextRotationAlignment>() == AlignmentType::Map &&
                                             layout->get<SymbolPlacement>() != SymbolPlacementType::Point &&
@@ -629,6 +630,15 @@ void SymbolLayout::prepareSymbols(const GlyphMap& glyphMap,
                     layoutTextSize,
                     layoutTextSizeAtBucketZoomLevel,
                     allowVerticalPlacement);
+                if (formattedText.hbShaped()) {
+                    // HarfBuzz shaping stores glyph IDs in formattedText.
+                    // Local font faces currently remain single-line and their
+                    // shaping path consumes explicit line breaks. Mirror that
+                    // behavior while retaining the original readable text.
+                    result.lineBrokenText = feature.originalText;
+                    std::erase(result.lineBrokenText, u'\n');
+                    std::erase(result.lineBrokenText, u'\r');
+                }
 
                 return result;
             };
@@ -848,7 +858,7 @@ void SymbolLayout::addFeature(const std::size_t layoutFeatureIndex,
                                          indexedFeature,
                                          layoutFeatureIndex,
                                          feature.index,
-                                         feature.formattedText ? feature.formattedText->rawText() : std::u16string(),
+                                         feature.originalText,
                                          overscaling,
                                          iconRotation,
                                          textRotation,

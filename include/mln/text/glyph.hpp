@@ -144,6 +144,10 @@ public:
           right(x),
           writingMode(writingMode_) {}
     std::vector<PositionedLine> positionedLines;
+    // Text after MapLibre's line-breaking pass, with explicit newlines.
+    // Command Export consumers use this to paint the same line layout without
+    // repeating shaping with a different platform text engine.
+    std::u16string lineBrokenText;
     float top = 0;
     float bottom = 0;
     float left = 0;

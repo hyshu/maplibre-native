@@ -123,6 +123,7 @@ SymbolInstance::SymbolInstance(Anchor& anchor_,
       textOffset(textOffset_),
       iconOffset(iconOffset_),
       key(std::move(key_)),
+      lineBrokenText(getAnyShaping(shapedTextOrientations).lineBrokenText),
       textBoxScale(textBoxScale_),
       textVariableAnchorOffset(textVariableAnchorOffset_),
       singleLine(shapedTextOrientations.singleLine) {
@@ -246,7 +247,7 @@ bool SymbolInstance::check(const source_location& source) const {
            check(check19, 19, source) && check(check20, 20, source) && check(check21, 21, source) &&
            check(check22, 22, source) && check(check23, 23, source) && check(check24, 24, source) &&
            check(check25, 25, source) && check(check26, 26, source) && check(check27, 27, source) &&
-           check(check28, 28, source) && checkKey(source);
+           check(check28, 28, source) && check(check29, 29, source) && checkKey(source);
 }
 
 bool SymbolInstance::checkIndexes(std::size_t textCount,
@@ -313,7 +314,7 @@ void SymbolInstance::forceFail() const {
 void SymbolInstance::forceFailInternal() {
     check01 = check02 = check03 = check04 = check05 = check06 = check07 = check08 = check09 = check10 = check11 =
         check12 = check13 = check14 = check15 = check16 = check17 = check18 = check19 = check20 = check21 = check22 =
-            check23 = check24 = check25 = check26 = check27 = check28 = 0;
+            check23 = check24 = check25 = check26 = check27 = check28 = check29 = 0;
 }
 
 #endif // MLN_SYMBOL_GUARDS

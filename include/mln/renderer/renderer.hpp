@@ -26,6 +26,8 @@ class RendererBackend;
 struct PlacedSymbolData {
     /// Contents of the label
     std::u16string key;
+    /// Contents after MapLibre shaping has inserted balanced line breaks
+    std::u16string lineBrokenText;
     /// Stable identity assigned by CrossTileSymbolIndex
     uint32_t crossTileID = 0;
     /// If symbol contains text, text collision box in viewport coordinates

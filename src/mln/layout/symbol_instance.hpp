@@ -150,6 +150,7 @@ public:
     std::array<float, 2> getTextOffset() const { return textOffset; }
     std::array<float, 2> getIconOffset() const { return iconOffset; }
     const std::u16string& getKey() const { return key; }
+    const std::u16string& getLineBrokenText() const { return lineBrokenText; }
     std::optional<size_t> getPlacedRightTextIndex() const { return placedRightTextIndex; }
     std::optional<size_t> getPlacedCenterTextIndex() const { return placedCenterTextIndex; }
     std::optional<size_t> getPlacedLeftTextIndex() const { return placedLeftTextIndex; }
@@ -236,6 +237,8 @@ private:
     SYM_GUARD_VALUE(17)
     std::u16string key;
     SYM_GUARD_VALUE(18)
+    std::u16string lineBrokenText;
+    SYM_GUARD_VALUE(29)
     std::optional<size_t> placedRightTextIndex;
     SYM_GUARD_VALUE(19)
     std::optional<size_t> placedCenterTextIndex;
