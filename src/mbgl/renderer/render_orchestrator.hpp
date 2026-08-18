@@ -224,6 +224,7 @@ private:
     const bool backgroundLayerAsColor;
     bool contextLost = false;
     bool placedSymbolDataCollected = false;
+    bool placedSymbolDataCollectionChanged = false;
     bool tileCacheEnabled = true;
 
 #if MLN_RENDER_BACKEND_OPENGL
