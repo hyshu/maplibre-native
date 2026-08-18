@@ -2523,23 +2523,24 @@ void TilePlacement::newSymbolPlaced(const SymbolInstance& symbol,
         ScreenCoordinate{anchorPoint.x - viewportPadding,
                          ctx.getTransformState().getSize().height - (anchorPoint.y - viewportPadding)},
         LatLng::Wrapped);
-    PlacedSymbolData symbolData{.key = symbol.getKey(),
-                                .lineBrokenText = symbol.getLineBrokenText(),
-                                .crossTileID = symbol.getCrossTileID(),
-                                .textCollisionBox = textCollisionBox,
-                                .iconCollisionBox = iconCollisionBox,
-                                .textPlaced = placement.text,
-                                .iconPlaced = placement.icon,
-                                .intersectsTileBorder = !placement.skipFade && populateIntersections,
-                                .viewportPadding = viewportPadding,
-                                .anchorPoint = anchorPoint,
-                                .anchorLatLng = anchorLatLng,
-                                .layer = ctx.getBucket().bucketLeaderID,
-                                .renderGroup = currentRenderGroup,
-                                .renderOrder = currentRenderOrder,
-                                .icon = symbol.getIconImageID(),
-                                .textSize = evaluatedTextSize,
-                                .iconSize = evaluatedIconSize};
+    PlacedSymbolData symbolData{};
+    symbolData.key = symbol.getKey();
+    symbolData.lineBrokenText = symbol.getLineBrokenText();
+    symbolData.crossTileID = symbol.getCrossTileID();
+    symbolData.textCollisionBox = textCollisionBox;
+    symbolData.iconCollisionBox = iconCollisionBox;
+    symbolData.textPlaced = placement.text;
+    symbolData.iconPlaced = placement.icon;
+    symbolData.intersectsTileBorder = !placement.skipFade && populateIntersections;
+    symbolData.viewportPadding = viewportPadding;
+    symbolData.anchorPoint = anchorPoint;
+    symbolData.anchorLatLng = anchorLatLng;
+    symbolData.layer = ctx.getBucket().bucketLeaderID;
+    symbolData.renderGroup = currentRenderGroup;
+    symbolData.renderOrder = currentRenderOrder;
+    symbolData.icon = symbol.getIconImageID();
+    symbolData.textSize = evaluatedTextSize;
+    symbolData.iconSize = evaluatedIconSize;
     placedSymbolsData.emplace_back(std::move(symbolData));
 }
 
