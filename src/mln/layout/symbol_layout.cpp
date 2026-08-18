@@ -121,6 +121,7 @@ SymbolLayout::SymbolLayout(const BucketParameters& parameters,
                            const LayoutParameters& layoutParameters)
     : bucketLeaderID(layers.front()->baseImpl->id),
       sourceLayer(std::move(sourceLayer_)),
+      sourceID(toSymbolLayerProperties(layers.at(0)).layerImpl().source),
       overscaling(static_cast<float>(parameters.tileID.overscaleFactor())),
       zoom(parameters.tileID.overscaledZ),
       canonicalID(parameters.tileID.canonical),
@@ -133,6 +134,7 @@ SymbolLayout::SymbolLayout(const BucketParameters& parameters,
 
     textSize = leader.layout.get<TextSize>();
     iconSize = leader.layout.get<IconSize>();
+    iconOffsetDefined = !leader.layout.get<IconOffset>().isUndefined();
     textRadialOffset = leader.layout.get<TextRadialOffset>();
     textVariableAnchorOffset = leader.layout.get<TextVariableAnchorOffset>();
 
@@ -638,6 +640,22 @@ void SymbolLayout::prepareSymbols(const GlyphMap& glyphMap,
                     result.lineBrokenText = feature.originalText;
                     std::erase(result.lineBrokenText, u'\n');
                     std::erase(result.lineBrokenText, u'\r');
+                    result.logicalLineBrokenText = result.lineBrokenText;
+                    result.textRTL = bidi.isRTL(result.logicalLineBrokenText);
+                    result.visualTextSections.clear();
+                    result.textSections.clear();
+                    if (!formattedText.getSections().empty() && !result.lineBrokenText.empty()) {
+                        const auto& section = formattedText.getSections().front();
+                        result.textSections.push_back(ShapingTextSection{
+                            .start = 0,
+                            .end = static_cast<uint32_t>(result.lineBrokenText.size()),
+                            .scale = section.scale,
+                            .fontStack = section.fontStack,
+                            .imageID = section.imageID,
+                            .textColor = section.textColor,
+                        });
+                        result.visualTextSections = result.textSections;
+                    }
                 }
 
                 return result;
@@ -832,12 +850,94 @@ void SymbolLayout::addFeature(const std::size_t layoutFeatureIndex,
         }
     }
 
+    const auto& exportShaping = getDefaultHorizontalShaping(shapedTextOrientations)
+                                    ? getDefaultHorizontalShaping(shapedTextOrientations)
+                                    : shapedTextOrientations.vertical;
+    auto exportJustify = layout->evaluate<TextJustify>(zoom, feature, canonicalID);
+    if (exportJustify == TextJustifyType::Auto && (!variableAnchorOffsets || variableAnchorOffsets->empty())) {
+        exportJustify = getAnchorJustification(layout->evaluate<TextAnchor>(zoom, feature, canonicalID));
+    }
+    const auto shapingBounds = [](const Shaping& shaping) {
+        return SymbolVisualBounds{.top = shaping.top,
+                                  .bottom = shaping.bottom,
+                                  .left = shaping.left,
+                                  .right = shaping.right,
+                                  .valid = static_cast<bool>(shaping)};
+    };
+    const auto iconBounds = [hasIconTextFit](const std::optional<PositionedIcon>& shaped) {
+        if (!shaped) return SymbolVisualBounds{};
+        auto icon = *shaped;
+        const auto& image = icon.image();
+        if (hasIconTextFit && image.content && (image.textFitWidth || image.textFitHeight)) {
+            icon = icon.applyTextFit();
+        }
+        return SymbolVisualBounds{
+            .top = icon.top(), .bottom = icon.bottom(), .left = icon.left(), .right = icon.right(), .valid = true};
+    };
+    const auto iconStretchFraction = [hasIconTextFit](const std::optional<PositionedIcon>& shaped, bool horizontal) {
+        if (hasIconTextFit || !shaped) return 1.0f;
+        const auto& image = shaped->image();
+        const auto& stretches = horizontal ? image.stretchX : image.stretchY;
+        if (stretches.empty()) return 1.0f;
+        const float extent = horizontal ? image.paddedRect.w - 2 * ImagePosition::padding
+                                        : image.paddedRect.h - 2 * ImagePosition::padding;
+        float stretchExtent = 0;
+        for (const auto& stretch : stretches) {
+            stretchExtent += stretch.second - stretch.first;
+        }
+        if (extent <= 0 || stretchExtent <= 0) return 1.0f;
+
+        return std::min(stretchExtent / extent, 1.0f);
+    };
+    SymbolInstanceExportData exportData{
+        .featureProperties = feature.getProperties(),
+        .featureID = feature.getID(),
+        .featureType = feature.getType(),
+        .canonicalZ = canonicalID.z,
+        .canonicalX = canonicalID.x,
+        .canonicalY = canonicalID.y,
+        .sourceID = sourceID,
+        .sourceLayer = sourceLayer->getName(),
+        .textFontStack = layout->evaluate<TextFont>(zoom, feature, canonicalID),
+        .logicalLineBrokenText = exportShaping ? exportShaping.logicalLineBrokenText : std::u16string{},
+        .visualTextSections = exportShaping ? exportShaping.visualTextSections : std::vector<ShapingTextSection>{},
+        .textSections = exportShaping ? exportShaping.textSections : std::vector<ShapingTextSection>{},
+        .textRTL = exportShaping && exportShaping.textRTL,
+        .letterSpacing = layout->evaluate<TextLetterSpacing>(zoom, feature, canonicalID),
+        .lineHeight = layout->get<TextLineHeight>(),
+        .maxWidth = layout->evaluate<TextMaxWidth>(zoom, feature, canonicalID),
+        .textRotation = util::deg2radf(textRotation),
+        .iconRotation = util::deg2radf(iconRotation),
+        .iconOffsetDefined = iconOffsetDefined,
+        .iconStretchFractionX = iconStretchFraction(shapedIcon, true),
+        .iconStretchFractionY = iconStretchFraction(shapedIcon, false),
+        .textJustify = exportJustify,
+        .iconFitWidth = hasIconTextFit && shapedIcon ? shapedIcon->right() - shapedIcon->left() : 0,
+        .iconFitHeight = hasIconTextFit && shapedIcon ? shapedIcon->bottom() - shapedIcon->top() : 0,
+        .rightTextBounds = shapingBounds(shapedTextOrientations.right),
+        .centerTextBounds = shapingBounds(shapedTextOrientations.center),
+        .leftTextBounds = shapingBounds(shapedTextOrientations.left),
+        .verticalTextBounds = shapingBounds(shapedTextOrientations.vertical),
+        .iconBounds = iconBounds(shapedIcon),
+        .verticalIconBounds = iconBounds(verticallyShapedIcon),
+    };
+
     auto addSymbolInstance = [&](Anchor& anchor, std::shared_ptr<SymbolInstanceSharedData> sharedData) {
         assert(sharedData);
         const bool anchorInsideTile = anchor.point.x >= 0 && anchor.point.x < util::EXTENT && anchor.point.y >= 0 &&
                                       anchor.point.y < util::EXTENT;
 
         if (mode == MapMode::Tile || anchorInsideTile) {
+            auto instanceExportData = exportData;
+            const auto& sourceLine = sharedData->line;
+            if (sourceLine.size() >= 2) {
+                const auto segment = std::min(anchor.segment.value_or(0u), sourceLine.size() - 2);
+                instanceExportData.sourceLineSegment = std::array<Point<float>, 2>{
+                    convertPoint<float>(sourceLine[segment]),
+                    convertPoint<float>(sourceLine[segment + 1]),
+                };
+            }
+
             // For static/continuous rendering, only add symbols anchored within this tile:
             //  neighboring symbols will be added as part of the neighboring tiles.
             // In tiled rendering mode, add all symbols in the buffers so that we can:
@@ -864,7 +964,8 @@ void SymbolLayout::addFeature(const std::size_t layoutFeatureIndex,
                                          textRotation,
                                          variableAnchorOffsets,
                                          allowVerticalPlacement,
-                                         iconType);
+                                         iconType,
+                                         std::move(instanceExportData));
             if (feature.icon) {
                 symbolInstances.back().setIconImageID(feature.icon->id());
             }

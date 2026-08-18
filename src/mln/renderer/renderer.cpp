@@ -159,6 +159,10 @@ const std::vector<PlacedSymbolData>& Renderer::getPlacedSymbolsData() const {
     return impl->orchestrator.getPlacedSymbolsData();
 }
 
+const style::LayerProperties* Renderer::getEvaluatedLayerProperties(const std::string& layerID) const {
+    return impl->orchestrator.getEvaluatedLayerProperties(layerID);
+}
+
 void Renderer::setTileCacheEnabled(bool enable) {
     impl->orchestrator.setTileCacheEnabled(enable);
 }

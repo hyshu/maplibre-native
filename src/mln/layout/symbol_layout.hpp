@@ -124,6 +124,7 @@ private:
     // Stores the layer so that we can hold on to GeometryTileFeature instances
     // in SymbolFeature, which may reference data from this object.
     const std::unique_ptr<GeometryTileLayer> sourceLayer;
+    const std::string sourceID;
     const float overscaling;
     const float zoom;
     const CanonicalTileID canonicalID;
@@ -138,6 +139,7 @@ private:
     bool sortFeaturesByKey = false;
     bool allowVerticalPlacement = false;
     bool iconsInText = false;
+    bool iconOffsetDefined = false;
     std::vector<style::TextWritingModeType> placementModes;
 
     style::TextSize::UnevaluatedType textSize;

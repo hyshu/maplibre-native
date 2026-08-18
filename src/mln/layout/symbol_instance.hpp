@@ -4,6 +4,7 @@
 #include <mln/text/collision_feature.hpp>
 #include <mln/style/layers/symbol_layer_properties.hpp>
 #include <mln/util/bitmask_operations.hpp>
+#include <mln/util/feature.hpp>
 #include <mln/util/source_location.hpp>
 
 #include <cstdint>
@@ -39,6 +40,49 @@ struct ShapedTextOrientations {
     Shaping center;
     Shaping left;
     bool singleLine = false;
+};
+
+struct SymbolVisualBounds {
+    float top = 0;
+    float bottom = 0;
+    float left = 0;
+    float right = 0;
+    bool valid = false;
+};
+
+/// Feature and layout values needed after tile layout releases source data.
+struct SymbolInstanceExportData {
+    PropertyMap featureProperties;
+    FeatureIdentifier featureID = NullValue{};
+    FeatureType featureType = FeatureType::Unknown;
+    uint8_t canonicalZ = 0;
+    uint32_t canonicalX = 0;
+    uint32_t canonicalY = 0;
+    std::string sourceID;
+    std::string sourceLayer;
+    FontStack textFontStack;
+    std::u16string logicalLineBrokenText;
+    std::vector<ShapingTextSection> visualTextSections;
+    std::vector<ShapingTextSection> textSections;
+    bool textRTL = false;
+    float letterSpacing = 0;
+    float lineHeight = 1.2f;
+    float maxWidth = 10;
+    float textRotation = 0;
+    float iconRotation = 0;
+    bool iconOffsetDefined = false;
+    float iconStretchFractionX = 1;
+    float iconStretchFractionY = 1;
+    style::TextJustifyType textJustify = style::TextJustifyType::Center;
+    float iconFitWidth = 0;
+    float iconFitHeight = 0;
+    SymbolVisualBounds rightTextBounds;
+    SymbolVisualBounds centerTextBounds;
+    SymbolVisualBounds leftTextBounds;
+    SymbolVisualBounds verticalTextBounds;
+    SymbolVisualBounds iconBounds;
+    SymbolVisualBounds verticalIconBounds;
+    std::optional<std::array<Point<float>, 2>> sourceLineSegment;
 };
 
 enum class SymbolContent : uint8_t {
@@ -98,7 +142,8 @@ public:
                    float textRotation,
                    const std::optional<VariableAnchorOffsetCollection>& textVariableAnchorOffset,
                    bool allowVerticalPlacement,
-                   SymbolContent iconType = SymbolContent::None);
+                   SymbolContent iconType = SymbolContent::None,
+                   SymbolInstanceExportData exportData = {});
 
     std::optional<size_t> getDefaultHorizontalPlacedTextIndex() const;
     const GeometryCoordinates& line() const;
@@ -170,6 +215,8 @@ public:
     // icon). Exported to PlacedSymbolData for the Command Export symbol overlay.
     const std::string& getIconImageID() const { return iconImageID; }
     void setIconImageID(std::string id) { iconImageID = std::move(id); }
+
+    const SymbolInstanceExportData& getExportData() const { return exportData; }
 
     std::optional<size_t>& refPlacedRightTextIndex() { return placedRightTextIndex; }
     std::optional<size_t>& refPlacedCenterTextIndex() { return placedCenterTextIndex; }
@@ -260,6 +307,7 @@ private:
     uint32_t crossTileID = 0;
     SYM_GUARD_VALUE(28)
     std::string iconImageID;
+    SymbolInstanceExportData exportData;
 #if MLN_SYMBOL_GUARDS
     mutable bool isFailed = false;
 #endif

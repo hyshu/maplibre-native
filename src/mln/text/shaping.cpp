@@ -704,16 +704,22 @@ Shaping getShaping(const TaggedString& formattedString,
                    bool allowVerticalPlacement) {
     assert(layoutTextSize);
     std::vector<TaggedString> reorderedLines;
+    std::vector<TaggedString> logicalLines;
     if (formattedString.rawText().length()) {
         if (formattedString.sectionCount() == 1) {
             if (formattedString.getSection(0).type != GlyphIDType::FontPBF) {
                 reorderedLines.emplace_back(formattedString);
+                logicalLines.emplace_back(formattedString);
             } else {
+                std::vector<std::u16string> logicalUntaggedLines;
                 auto untaggedLines = bidi.processText(
                     formattedString.rawText(),
-                    determineLineBreaks(formattedString, spacing, maxWidth, glyphMap, imagePositions, layoutTextSize));
-                for (const auto& line : untaggedLines) {
-                    reorderedLines.emplace_back(line, formattedString.sectionAt(0));
+                    determineLineBreaks(formattedString, spacing, maxWidth, glyphMap, imagePositions, layoutTextSize),
+                    &logicalUntaggedLines);
+                assert(untaggedLines.size() == logicalUntaggedLines.size());
+                for (std::size_t i = 0; i < untaggedLines.size(); ++i) {
+                    reorderedLines.emplace_back(untaggedLines[i], formattedString.sectionAt(0));
+                    logicalLines.emplace_back(logicalUntaggedLines[i], formattedString.sectionAt(0));
                 }
             }
         } else {
@@ -725,20 +731,22 @@ Shaping getShaping(const TaggedString& formattedString,
             if (formattedSections.size() > 0) sectionType = formattedSections[0].type;
 
             std::vector<StyledText> pendStrings;
+            std::vector<StyledText> logicalPendStrings;
 
-            auto processAline = [&](StyledText line) {
+            auto processAline = [&](StyledText line, StyledText logicalLine) {
                 reorderedLines.emplace_back(line, formattedSections);
+                logicalLines.emplace_back(logicalLine, formattedSections);
 
-                auto cutLens = (int32_t)line.first.length();
+                auto cutLens = static_cast<int32_t>(line.first.length());
 
                 for (auto& sec : formattedSections) {
                     sec.startIndex -= cutLens;
                 }
             };
 
-            auto applyLineAndPendingStrings = [&](StyledText line) {
+            auto applyLineAndPendingStrings = [&](StyledText line, StyledText logicalLine) {
                 if (pendStrings.empty()) {
-                    processAline(line);
+                    processAline(std::move(line), std::move(logicalLine));
                 } else {
                     StyledText combine;
                     for (auto& pendString : pendStrings) {
@@ -748,13 +756,25 @@ Shaping getShaping(const TaggedString& formattedString,
                     pendStrings.clear();
                     combine.first.append(line.first);
                     combine.second.insert(combine.second.end(), line.second.begin(), line.second.end());
-                    processAline(combine);
+
+                    StyledText logicalCombine;
+                    for (auto& pendString : logicalPendStrings) {
+                        logicalCombine.first.append(pendString.first);
+                        logicalCombine.second.insert(
+                            logicalCombine.second.end(), pendString.second.begin(), pendString.second.end());
+                    }
+                    logicalPendStrings.clear();
+                    logicalCombine.first.append(logicalLine.first);
+                    logicalCombine.second.insert(
+                        logicalCombine.second.end(), logicalLine.second.begin(), logicalLine.second.end());
+                    processAline(std::move(combine), std::move(logicalCombine));
                 }
             };
 
             auto applySubString = [&]() {
                 if (subString.first.length()) {
                     if (GlyphIDType::FontPBF == sectionType) {
+                        std::vector<StyledText> logicalProcessedLines;
                         auto processedLines = bidi.processStyledText(
                             subString,
                             determineLineBreaks({subString, formattedString.getSections()},
@@ -762,29 +782,34 @@ Shaping getShaping(const TaggedString& formattedString,
                                                 maxWidth,
                                                 glyphMap,
                                                 imagePositions,
-                                                layoutTextSize));
+                                                layoutTextSize),
+                            &logicalProcessedLines);
+                        assert(processedLines.size() == logicalProcessedLines.size());
 
                         auto lastChar = u'x';
                         if (!subString.first.empty()) lastChar = subString.first[subString.first.length() - 1];
 
                         if (u'\n' == lastChar) {
-                            for (const auto& line : processedLines) {
-                                applyLineAndPendingStrings(line);
+                            for (std::size_t i = 0; i < processedLines.size(); ++i) {
+                                applyLineAndPendingStrings(processedLines[i], logicalProcessedLines[i]);
                             }
                         } else {
                             auto lineCount = processedLines.size();
                             if (lineCount > 1) {
                                 for (size_t lineIndex = 0; lineIndex < lineCount - 1; ++lineIndex) {
-                                    applyLineAndPendingStrings(processedLines[lineIndex]);
+                                    applyLineAndPendingStrings(processedLines[lineIndex],
+                                                               logicalProcessedLines[lineIndex]);
                                 }
                             }
                             if (lineCount) {
                                 pendStrings.push_back(processedLines[lineCount - 1]);
+                                logicalPendStrings.push_back(logicalProcessedLines[lineCount - 1]);
                             }
                         }
 
                     } else {
                         pendStrings.push_back(subString);
+                        logicalPendStrings.push_back(subString);
                     }
                 }
             };
@@ -816,26 +841,66 @@ Shaping getShaping(const TaggedString& formattedString,
                     combine.second.insert(combine.second.end(), pendString.second.begin(), pendString.second.end());
                 }
                 pendStrings.clear();
-                processAline(combine);
+                StyledText logicalCombine;
+                for (auto& pendString : logicalPendStrings) {
+                    logicalCombine.first.append(pendString.first);
+                    logicalCombine.second.insert(
+                        logicalCombine.second.end(), pendString.second.begin(), pendString.second.end());
+                }
+                logicalPendStrings.clear();
+                processAline(std::move(combine), std::move(logicalCombine));
             }
         }
     }
 
     Shaping shaping(translate[0], translate[1], writingMode);
+    shaping.textRTL = bidi.isRTL(formattedString.rawText());
     // shapeLines replaces local-font characters with generated glyph IDs.
     // Preserve the human-readable, line-broken text before that mutation so
     // Command Export consumers can paint the same lines with platform text.
-    for (std::size_t i = 0; i < reorderedLines.size(); i++) {
-        if (i > 0) shaping.lineBrokenText.push_back(u'\n');
-        for (const auto ch : reorderedLines[i].rawText()) {
-            // BiDi line ranges include paragraph separators. The line
-            // separator above already represents each shaped line, so copying
-            // them would create an extra blank line in platform text.
-            if (ch != u'\n' && ch != u'\r') {
-                shaping.lineBrokenText.push_back(ch);
-            }
+    const auto sameSection = [](const ShapingTextSection& current, const SectionOptions& next) {
+        return current.scale == next.scale && current.fontStack == next.fontStack && current.imageID == next.imageID &&
+               current.textColor == next.textColor;
+    };
+    const auto appendCharacter = [&](std::u16string& text,
+                                     std::vector<ShapingTextSection>* sections,
+                                     char16_t ch,
+                                     const SectionOptions& section) {
+        const auto start = static_cast<uint32_t>(text.size());
+        text.push_back(ch);
+        if (!sections) return;
+        if (!sections->empty() && sameSection(sections->back(), section)) {
+            sections->back().end = start + 1;
+        } else {
+            sections->push_back(ShapingTextSection{.start = start,
+                                                   .end = start + 1,
+                                                   .scale = section.scale,
+                                                   .fontStack = section.fontStack,
+                                                   .imageID = section.imageID,
+                                                   .textColor = section.textColor});
         }
-    }
+    };
+    const auto appendLines =
+        [&](const std::vector<TaggedString>& lines, std::u16string& text, std::vector<ShapingTextSection>* sections) {
+            for (std::size_t i = 0; i < lines.size(); i++) {
+                if (i > 0) {
+                    text.push_back(u'\n');
+                    if (sections && !sections->empty()) {
+                        sections->back().end++;
+                    }
+                }
+                for (std::size_t j = 0; j < lines[i].length(); ++j) {
+                    const auto ch = lines[i].getCharCodeAt(j);
+                    // BiDi line ranges include paragraph separators. The line
+                    // separator above already represents each shaped line.
+                    if (ch != u'\n' && ch != u'\r') {
+                        appendCharacter(text, sections, ch, lines[i].getSection(j));
+                    }
+                }
+            }
+        };
+    appendLines(reorderedLines, shaping.lineBrokenText, &shaping.visualTextSections);
+    appendLines(logicalLines, shaping.logicalLineBrokenText, &shaping.textSections);
     shapeLines(shaping,
                reorderedLines,
                spacing,

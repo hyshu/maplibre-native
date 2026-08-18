@@ -203,6 +203,8 @@ TEST(Shaping, ZWSP) {
         auto shaping = testGetShaping(string, 5);
         ASSERT_EQ(shaping.positionedLines.size(), 2);
         ASSERT_EQ(shaping.lineBrokenText, u"中\n中");
+        ASSERT_EQ(shaping.logicalLineBrokenText, u"中\n中");
+        ASSERT_FALSE(shaping.textRTL);
     }
 }
 
@@ -683,6 +685,68 @@ TEST(Shaping, VerticalGlyphOrientationDelimitsNativeGlyphSections) {
         {u'D', "upright"},
     };
     EXPECT_EQ(orientations, expected);
+}
+
+TEST(Shaping, RetainsLogicalAndVisualFormattedSectionsForRTLText) {
+    const FontStack rtlFont{"rtl-font"};
+    const FontStack latinFont{"latin-font"};
+    TaggedString string;
+    string.addTextSection(u"אב", 1.0, rtlFont, GlyphIDType::FontPBF);
+    string.addTextSection(u"CD", 2.0, latinFont, GlyphIDType::FontPBF);
+
+    GlyphMap glyphs;
+    GlyphPositions glyphPositions;
+    const auto addGlyph = [&](char16_t character, const FontStack& font) {
+        GlyphPosition position;
+        position.metrics.width = 18;
+        position.metrics.height = 18;
+        position.metrics.advance = 21;
+        Glyph glyph;
+        glyph.id = character;
+        glyph.metrics = position.metrics;
+        const auto hash = FontStackHasher()(font);
+        glyphs[hash].emplace(character, Immutable<Glyph>(makeMutable<Glyph>(std::move(glyph))));
+        glyphPositions[hash].emplace(character, std::move(position));
+    };
+    addGlyph(u'א', rtlFont);
+    addGlyph(u'ב', rtlFont);
+    addGlyph(u'C', latinFont);
+    addGlyph(u'D', latinFont);
+
+    BiDi bidi;
+    const auto shaping = getShaping(string,
+                                    20 * ONE_EM,
+                                    ONE_EM,
+                                    style::SymbolAnchorType::Center,
+                                    style::TextJustifyType::Center,
+                                    0,
+                                    {{0.0f, 0.0f}},
+                                    WritingModeType::Horizontal,
+                                    bidi,
+                                    glyphs,
+                                    glyphPositions,
+                                    {},
+                                    16,
+                                    16,
+                                    false);
+
+    EXPECT_EQ(shaping.logicalLineBrokenText, u"אבCD");
+    EXPECT_EQ(shaping.lineBrokenText, u"CDבא");
+    EXPECT_TRUE(shaping.textRTL);
+    ASSERT_EQ(shaping.textSections.size(), 2u);
+    EXPECT_EQ(shaping.textSections[0].start, 0u);
+    EXPECT_EQ(shaping.textSections[0].end, 2u);
+    EXPECT_EQ(shaping.textSections[0].fontStack, rtlFont);
+    EXPECT_EQ(shaping.textSections[1].start, 2u);
+    EXPECT_EQ(shaping.textSections[1].end, 4u);
+    EXPECT_EQ(shaping.textSections[1].fontStack, latinFont);
+    ASSERT_EQ(shaping.visualTextSections.size(), 2u);
+    EXPECT_EQ(shaping.visualTextSections[0].start, 0u);
+    EXPECT_EQ(shaping.visualTextSections[0].end, 2u);
+    EXPECT_EQ(shaping.visualTextSections[0].fontStack, latinFont);
+    EXPECT_EQ(shaping.visualTextSections[1].start, 2u);
+    EXPECT_EQ(shaping.visualTextSections[1].end, 4u);
+    EXPECT_EQ(shaping.visualTextSections[1].fontStack, rtlFont);
 }
 
 void setupShapedText(Shaping& shapedText, float textSize) {
