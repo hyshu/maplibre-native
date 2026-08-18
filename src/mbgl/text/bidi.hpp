@@ -28,9 +28,16 @@ public:
 
     // Given text in logical ordering and a set of line break points,
     // return a set of lines in visual order with bidi and line breaking applied
-    std::vector<std::u16string> processText(const std::u16string&, std::set<std::size_t>);
+    std::vector<std::u16string> processText(const std::u16string&,
+                                            std::set<std::size_t>,
+                                            std::vector<std::u16string>* logicalLines = nullptr);
     // Same as processText but preserves per-code-point formatting information
-    std::vector<StyledText> processStyledText(const StyledText&, std::set<std::size_t>);
+    std::vector<StyledText> processStyledText(const StyledText&,
+                                              std::set<std::size_t>,
+                                              std::vector<StyledText>* logicalLines = nullptr);
+
+    // Resolves the paragraph direction using the same default as processText.
+    bool isRTL(const std::u16string&) const;
 
 private:
     void mergeParagraphLineBreaks(std::set<std::size_t>&);

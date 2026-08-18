@@ -498,10 +498,11 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
             placementUpdatePeriodOverride = std::optional<Duration>(Milliseconds(30));
         }
 
-        renderTreeParameters->placementChanged = !placementController.placementIsRecent(
-            updateParameters->timePoint,
-            static_cast<float>(updateParameters->transformState.getZoom()),
-            placementUpdatePeriodOverride);
+        renderTreeParameters->placementChanged = placedSymbolDataCollected ||
+                                                 !placementController.placementIsRecent(
+                                                     updateParameters->timePoint,
+                                                     static_cast<float>(updateParameters->transformState.getZoom()),
+                                                     placementUpdatePeriodOverride);
         symbolBucketsChanged |= renderTreeParameters->placementChanged;
         if (renderTreeParameters->placementChanged) {
             Mutable<Placement> placement = Placement::create(updateParameters, placementController.getPlacement());
@@ -795,6 +796,11 @@ void RenderOrchestrator::collectPlacedSymbolData(bool enable) {
 
 const std::vector<PlacedSymbolData>& RenderOrchestrator::getPlacedSymbolsData() const {
     return placementController.getPlacement()->getPlacedSymbolsData();
+}
+
+const style::LayerProperties* RenderOrchestrator::getEvaluatedLayerProperties(const std::string& layerID) const {
+    const auto* layer = getRenderLayer(layerID);
+    return layer ? layer->evaluatedProperties.get() : nullptr;
 }
 
 RenderLayer* RenderOrchestrator::getRenderLayer(const std::string& id) {

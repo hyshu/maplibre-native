@@ -98,7 +98,8 @@ SymbolInstance::SymbolInstance(Anchor& anchor_,
                                const float textRotation,
                                const std::optional<VariableAnchorOffsetCollection>& textVariableAnchorOffset_,
                                bool allowVerticalPlacement,
-                               const SymbolContent iconType)
+                               const SymbolContent iconType,
+                               SymbolInstanceExportData exportData_)
     : sharedData(std::move(sharedData_)),
       anchor(anchor_),
       symbolContent(iconType),
@@ -125,7 +126,8 @@ SymbolInstance::SymbolInstance(Anchor& anchor_,
       lineBrokenText(getAnyShaping(shapedTextOrientations).lineBrokenText),
       textBoxScale(textBoxScale_),
       textVariableAnchorOffset(textVariableAnchorOffset_),
-      singleLine(shapedTextOrientations.singleLine) {
+      singleLine(shapedTextOrientations.singleLine),
+      exportData(std::move(exportData_)) {
     // 'hasText' depends on finding at least one glyph in the shaping that's also in the GlyphPositionMap
     if (!sharedData->empty()) symbolContent |= SymbolContent::Text;
     if (allowVerticalPlacement && shapedTextOrientations.vertical) {

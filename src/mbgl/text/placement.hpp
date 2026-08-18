@@ -197,6 +197,11 @@ protected:
     std::unordered_map<uint32_t, VariableOffset> variableOffsets;
     std::unordered_map<uint32_t, style::TextWritingModeType> placedOrientations;
 
+    // Paint order is independent of placement priority for viewport-Y symbols.
+    std::unordered_map<const SymbolInstance*, uint64_t> symbolRenderOrders;
+    uint32_t currentRenderGroup = 0;
+    uint32_t currentRenderOrder = 0;
+
     std::unordered_map<uint32_t, RetainedQueryData> retainedQueryData;
     CollisionGroups collisionGroups;
     mutable std::optional<Immutable<Placement>> prevPlacement;

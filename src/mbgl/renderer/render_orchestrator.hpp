@@ -99,6 +99,7 @@ public:
     void dumpDebugLogs();
     void collectPlacedSymbolData(bool);
     const std::vector<PlacedSymbolData>& getPlacedSymbolsData() const;
+    const style::LayerProperties* getEvaluatedLayerProperties(const std::string&) const;
     void clearData();
 
     void update(const std::shared_ptr<UpdateParameters>&);

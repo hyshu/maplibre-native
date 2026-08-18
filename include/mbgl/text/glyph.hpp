@@ -7,6 +7,7 @@
 #include <mbgl/util/traits.hpp>
 #include <mbgl/util/immutable.hpp>
 #include <mbgl/util/image.hpp>
+#include <mbgl/util/color.hpp>
 #include <mbgl/util/util.hpp>
 
 #include <algorithm>
@@ -45,11 +46,11 @@ union GlyphID {
 
     operator char16_t() { return complex.code; }
     operator char32_t() { return hash; }
-    bool operator<(const GlyphID &other) const { return hash < other.hash; }
-    bool operator>(const GlyphID &other) const { return hash > other.hash; }
+    bool operator<(const GlyphID& other) const { return hash < other.hash; }
+    bool operator>(const GlyphID& other) const { return hash > other.hash; }
 
-    bool operator<(const uint16_t &other) const { return hash < other; }
-    bool operator>(const uint16_t &other) const { return hash > other; }
+    bool operator<(const uint16_t& other) const { return hash < other; }
+    bool operator>(const uint16_t& other) const { return hash > other; }
 };
 
 using GlyphIDs = std::set<GlyphID>;
@@ -68,7 +69,7 @@ struct GlyphMetrics {
     bool isDoubleResolution = false;
 };
 
-inline bool operator==(const GlyphMetrics &lhs, const GlyphMetrics &rhs) {
+inline bool operator==(const GlyphMetrics& lhs, const GlyphMetrics& rhs) {
     return lhs.width == rhs.width && lhs.height == rhs.height && lhs.left == rhs.left && lhs.top == rhs.top &&
            lhs.advance == rhs.advance && lhs.isDoubleResolution == rhs.isDoubleResolution;
 }
@@ -134,6 +135,16 @@ struct PositionedLine {
     float lineOffset = 0.0;
 };
 
+/// Formatting retained for one logical UTF-16 range after line breaking.
+struct ShapingTextSection {
+    uint32_t start = 0;
+    uint32_t end = 0;
+    double scale = 1.0;
+    FontStack fontStack;
+    std::optional<std::string> imageID;
+    std::optional<Color> textColor;
+};
+
 class Shaping {
 public:
     Shaping() = default;
@@ -148,13 +159,21 @@ public:
     // Command Export consumers use this to paint the same line layout without
     // repeating shaping with a different platform text engine.
     std::u16string lineBrokenText;
+    /// Formatting ranges aligned with visual-order `lineBrokenText` offsets.
+    std::vector<ShapingTextSection> visualTextSections;
+    /// Logical-order text using the same explicit line breaks.
+    std::u16string logicalLineBrokenText;
+    /// Formatting ranges aligned with `logicalLineBrokenText` UTF-16 offsets.
+    std::vector<ShapingTextSection> textSections;
+    /// Resolved paragraph direction. Neutral paragraphs use left-to-right.
+    bool textRTL = false;
     float top = 0;
     float bottom = 0;
     float left = 0;
     float right = 0;
     WritingModeType writingMode;
     explicit operator bool() const {
-        return std::ranges::any_of(positionedLines, [](const auto &line) { return !line.positionedGlyphs.empty(); });
+        return std::ranges::any_of(positionedLines, [](const auto& line) { return !line.positionedGlyphs.empty(); });
     }
     // The y offset *should* be part of the font metadata.
     static constexpr int32_t yOffset = -17;
@@ -177,13 +196,13 @@ struct FontFace {
     std::vector<Range> ranges; // unicode ranges
 
     FontFace() = default;
-    FontFace(const std::string &name_, const std::string &url_, const std::vector<Range> &ranges_)
+    FontFace(const std::string& name_, const std::string& url_, const std::vector<Range>& ranges_)
         : type(FontPBF),
           name(name_),
           url(url_),
           ranges(ranges_) {}
 
-    FontFace(const std::string &name_, const std::string &url_, std::vector<Range> &&ranges_)
+    FontFace(const std::string& name_, const std::string& url_, std::vector<Range>&& ranges_)
         : type(FontPBF),
           name(name_),
           url(url_),
@@ -199,7 +218,7 @@ struct HBShapeRequest {
     FontStack fontStack;
     GlyphIDType type;
 
-    HBShapeRequest(const std::u16string &str_, const FontStack &fontStack_, GlyphIDType type_)
+    HBShapeRequest(const std::u16string& str_, const FontStack& fontStack_, GlyphIDType type_)
         : str(str_),
           fontStack(fontStack_),
           type(type_) {}
