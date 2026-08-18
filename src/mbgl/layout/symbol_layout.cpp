@@ -919,6 +919,7 @@ void SymbolLayout::addFeature(const std::size_t layoutFeatureIndex,
         .verticalTextBounds = shapingBounds(shapedTextOrientations.vertical),
         .iconBounds = iconBounds(shapedIcon),
         .verticalIconBounds = iconBounds(verticallyShapedIcon),
+        .sourceLineSegment = std::nullopt,
     };
 
     auto addSymbolInstance = [&](Anchor& anchor, std::shared_ptr<SymbolInstanceSharedData> sharedData) {
