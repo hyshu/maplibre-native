@@ -66,7 +66,9 @@ static_assert(shaderTypeFromProgramName("FillOutlineShader") == ShaderType::Fill
 static_assert(shaderTypeFromProgramName("FillOutlineTriangulatedShader") == ShaderType::FillOutlineTriangulated);
 static_assert(shaderTypeFromProgramName("BackgroundPatternShader") == ShaderType::BackgroundPattern);
 static_assert(shaderTypeFromProgramName("FillExtrusionPatternShader") == ShaderType::Unknown);
+static_assert(shaderTypeFromProgramName("SymbolIconShader") == ShaderType::Unknown);
 static_assert(shaderTypeFromProgramName("SymbolSDFShader") == ShaderType::Unknown);
+static_assert(shaderTypeFromProgramName("SymbolTextAndIconShader") == ShaderType::Unknown);
 static_assert(offsetof(shaders::FillExtrusionPropsUBO, base) == 44);
 static_assert(offsetof(shaders::FillExtrusionPropsUBO, height) == 48);
 static_assert(offsetof(shaders::FillExtrusionDrawableUBO, pad1) == 108);
