@@ -40,9 +40,11 @@ using namespace shaders;
 
 namespace {
 
+#if !MLN_RENDER_BACKEND_COMMAND_EXPORT
 constexpr std::string_view SymbolIconShaderName = "SymbolIconShader";
 constexpr std::string_view SymbolSDFShaderName = "SymbolSDFShader";
 constexpr std::string_view SymbolTextAndIconShaderName = "SymbolTextAndIconShader";
+#endif
 constexpr std::string_view CollisionBoxShaderName = "CollisionBoxShader";
 constexpr std::string_view CollisionCircleShaderName = "CollisionCircleShader";
 
@@ -72,6 +74,7 @@ style::SymbolPropertyValues textPropertyValues(const style::SymbolPaintPropertie
         .hasFill = evaluated_.get<style::TextColor>().constantOr(Color::black()).a > 0};
 }
 
+#if !MLN_RENDER_BACKEND_COMMAND_EXPORT
 using SegmentWrapper = std::reference_wrapper<const SegmentBase>;
 using SegmentVectorWrapper = std::reference_wrapper<const SegmentVector>;
 using SegmentsWrapper = variant<SegmentWrapper, SegmentVectorWrapper>;
@@ -130,6 +133,7 @@ struct SegmentGroup {
 
     bool operator<(const SegmentGroup& other) const { return renderable < other.renderable; }
 };
+#endif
 
 inline const SymbolLayer::Impl& impl_cast(const Immutable<style::Layer::Impl>& impl) {
     assert(impl->getTypeInfo() == SymbolLayer::Impl::staticTypeInfo());
@@ -236,6 +240,7 @@ void RenderSymbolLayer::prepare(const LayerPrepareParameters& params) {
 }
 
 namespace {
+#if !MLN_RENDER_BACKEND_COMMAND_EXPORT
 const SegmentVector emptySegmentVector;
 constexpr auto posOffsetAttribName = "a_pos_offset";
 [[maybe_unused]] constexpr auto sortedInstanceUniformName = "sorted_instance";
@@ -382,6 +387,7 @@ void updateTileDrawable(gfx::Drawable& drawable,
     }
 #endif
 }
+#endif
 
 gfx::VertexAttributeArrayPtr getCollisionVertexAttributes(gfx::Context& context,
                                                           const SymbolBucket::CollisionBuffer& buffer) {
@@ -492,10 +498,12 @@ void RenderSymbolLayer::update(gfx::ShaderRegistry& shaders,
         }
     }
 
+#if !MLN_RENDER_BACKEND_COMMAND_EXPORT
     if (!layerTweaker) {
         layerTweaker = std::make_shared<SymbolLayerTweaker>(getID(), evaluatedProperties);
         layerGroup->addLayerTweaker(layerTweaker);
     }
+#endif
 
     const auto& getCollisionTileLayerGroup = [&] {
         if (!collisionTileLayerGroup) {
@@ -512,6 +520,7 @@ void RenderSymbolLayer::update(gfx::ShaderRegistry& shaders,
         return collisionTileLayerGroup;
     };
 
+#if !MLN_RENDER_BACKEND_COMMAND_EXPORT
     if (!symbolIconGroup) {
         symbolIconGroup = shaders.getShaderGroup(std::string(SymbolIconShaderName));
     }
@@ -521,6 +530,7 @@ void RenderSymbolLayer::update(gfx::ShaderRegistry& shaders,
     if (!symbolTextAndIconGroup) {
         symbolTextAndIconGroup = shaders.getShaderGroup(std::string(SymbolTextAndIconShaderName));
     }
+#endif
     if (!collisionBoxGroup) {
         collisionBoxGroup = shaders.getShaderGroup(std::string(CollisionBoxShaderName));
     }
@@ -558,6 +568,7 @@ void RenderSymbolLayer::update(gfx::ShaderRegistry& shaders,
         });
     }
 
+#if !MLN_RENDER_BACKEND_COMMAND_EXPORT
     const auto& layout = impl_cast(baseImpl).layout;
     const bool sortFeaturesByKey = !layout.get<SymbolSortKey>().isUndefined();
     std::multiset<SegmentGroup> renderableSegments;
@@ -566,6 +577,9 @@ void RenderSymbolLayer::update(gfx::ShaderRegistry& shaders,
 
     const auto currentZoom = static_cast<float>(state.getZoom());
     const auto layerPrefix = getID() + "/";
+#else
+    static_cast<void>(state);
+#endif
     const auto layerCollisionPrefix = getID() + "-collision/";
 
     std::unique_ptr<gfx::DrawableBuilder> collisionBuilder = context.createDrawableBuilder(layerCollisionPrefix);
@@ -575,7 +589,9 @@ void RenderSymbolLayer::update(gfx::ShaderRegistry& shaders,
     collisionBuilder->setCullFaceMode(gfx::CullFaceMode::disabled());
     collisionBuilder->setColorMode(gfx::ColorMode::alphaBlended());
 
+#if !MLN_RENDER_BACKEND_COMMAND_EXPORT
     StringIDSetsPair propertiesAsUniforms;
+#endif
     for (const RenderTile& tile : *renderTiles) {
         const auto& tileID = tile.getOverscaledTileID();
 
@@ -598,7 +614,9 @@ void RenderSymbolLayer::update(gfx::ShaderRegistry& shaders,
         setRenderTileBucketID(tileID, bucket.getID());
 
         assert(bucket.paintProperties.contains(getID()));
+#if !MLN_RENDER_BACKEND_COMMAND_EXPORT
         const auto& bucketPaintProperties = bucket.paintProperties.at(getID());
+#endif
 
         auto addCollisionDrawables = [&](const bool isText, const bool hasCollisionBox, const bool hasCollisionCircle) {
             if (!hasCollisionBox && !hasCollisionCircle) return;
@@ -661,6 +679,15 @@ void RenderSymbolLayer::update(gfx::ShaderRegistry& shaders,
             }
         };
 
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+        // Command Export exposes symbols through placement data because its draw-command ABI has no symbol pipelines.
+        // Collision drawables remain available for renderer debug modes.
+        if (collisionTileLayerGroup) {
+            collisionTileLayerGroup->removeDrawables(passes, tileID);
+        }
+        addCollisionDrawables(false /*isText*/, bucket.hasIconCollisionBoxData(), bucket.hasIconCollisionCircleData());
+        addCollisionDrawables(true /*isText*/, bucket.hasTextCollisionBoxData(), bucket.hasTextCollisionCircleData());
+#else
         // If we already have drawables for this tile, update them.
         // Just update the drawables we already created
         auto updateExisting = [&](gfx::Drawable& drawable) {
@@ -729,8 +756,10 @@ void RenderSymbolLayer::update(gfx::ShaderRegistry& shaders,
 
         addCollisionDrawables(false /*isText*/, bucket.hasIconCollisionBoxData(), bucket.hasIconCollisionCircleData());
         addCollisionDrawables(true /*isText*/, bucket.hasTextCollisionBoxData(), bucket.hasTextCollisionCircleData());
+#endif
     }
 
+#if !MLN_RENDER_BACKEND_COMMAND_EXPORT
     // We'll be processing renderables across tiles, potentially out-of-order, so keep
     // track of some things by tile ID so we don't have to re-build them multiple times.
     using RawVertexVec = std::vector<std::uint8_t>; // raw buffer for vertexes of <int16_t, 4>
@@ -942,6 +971,7 @@ void RenderSymbolLayer::update(gfx::ShaderRegistry& shaders,
             }
         }
     }
+#endif
 }
 
 } // namespace mln
