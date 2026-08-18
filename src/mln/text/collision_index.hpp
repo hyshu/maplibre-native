@@ -29,7 +29,7 @@ class CollisionIndex {
 public:
     using CollisionGrid = GridIndex<IndexedSubfeature>;
 
-    explicit CollisionIndex(const TransformState&, MapMode);
+    explicit CollisionIndex(const TransformState&, MapMode, bool initializeGrid = true);
     IntersectStatus intersectsTileEdges(const CollisionBox&,
                                         Point<float> shift,
                                         const mat4& posMatrix,
@@ -51,6 +51,23 @@ public:
         const std::optional<std::function<bool(const RefIndexedSubfeature&)>>& collisionGroupPredicate,
         std::vector<ProjectedCollisionBox>& /*out*/
     );
+
+    /**
+     * Projects collision geometry without testing or updating the collision grid.
+     *
+     * This keeps already placed symbols aligned with camera-only frames without
+     * performing another collision placement.
+     */
+    void projectFeature(const CollisionFeature& feature,
+                        Point<float> shift,
+                        const mat4& posMatrix,
+                        const mat4& labelPlaneMatrix,
+                        float textPixelRatio,
+                        const PlacedSymbol& symbol,
+                        float scale,
+                        float fontSize,
+                        bool pitchWithMap,
+                        std::vector<ProjectedCollisionBox>& /*out*/);
 
     void insertFeature(const CollisionFeature& feature,
                        const std::vector<ProjectedCollisionBox>&,

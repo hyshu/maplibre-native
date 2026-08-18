@@ -217,6 +217,12 @@ void Placement::placeLayers(const RenderLayerReferences& layers) {
         placeLayer(*it, seenCrossTileIDs);
     }
     commit();
+    if (placedSymbolDataCollected_) {
+        const auto& state = collisionIndex.getTransformState();
+        placedSymbolRefreshProjection_ = state.getProjectionMatrix();
+        placedSymbolRefreshZoom_ = state.getZoom();
+        placedSymbolRefreshSize_ = state.getSize();
+    }
 }
 
 void Placement::placeLayer(const RenderLayer& layer, std::set<uint32_t>& seenCrossTileIDs) {
@@ -1675,70 +1681,499 @@ void Placement::newSymbolPlaced(const SymbolInstance& symbol,
     auto iconPath = iconGeometry.path;
     for (auto& point : iconPath) point -= anchorPoint;
 
-    PlacedSymbolData symbolData{.key = symbol.getKey(),
-                                .lineBrokenText = symbol.getLineBrokenText(),
-                                .logicalLineBrokenText = exportData.logicalLineBrokenText,
-                                .textRTL = exportData.textRTL,
-                                .crossTileID = symbol.getCrossTileID(),
-                                .textCollisionBox = textGeometry.bounds,
-                                .iconCollisionBox = iconGeometry.bounds,
-                                .textPlaced = placement.text,
-                                .iconPlaced = placement.icon,
-                                .intersectsTileBorder = false,
-                                .viewportPadding = viewportPadding,
-                                .anchorPoint = anchorPoint,
-                                .tileWrap = ctx.getRenderTile().id.wrap,
-                                .tileAnchor = convertPoint<float>(symbol.getAnchor().point),
-                                .anchorLatLng = anchorLatLng,
-                                .layer = ctx.getBucket().bucketLeaderID,
-                                .layers = std::move(layers),
-                                .renderGroup = currentRenderGroup,
-                                .renderOrder = currentRenderOrder,
-                                .sourceID = exportData.sourceID,
-                                .sourceLayer = exportData.sourceLayer,
-                                .featureProperties = exportData.featureProperties,
-                                .featureID = exportData.featureID,
-                                .featureType = exportData.featureType,
-                                .canonicalZ = exportData.canonicalZ,
-                                .canonicalX = exportData.canonicalX,
-                                .canonicalY = exportData.canonicalY,
-                                .icon = symbol.getIconImageID(),
-                                .textSize = evaluatedTextSize,
-                                .iconSize = evaluatedIconSize,
-                                .textAngle = textGeometry.angle,
-                                .alongLine = textAlongLine,
-                                .textPath = std::move(textPath),
-                                .iconAngle = iconGeometry.angle,
-                                .iconAlongLine = iconAlongLine,
-                                .iconPath = std::move(iconPath),
-                                .visualTextSections = exportData.visualTextSections,
-                                .textSections = exportData.textSections,
-                                .textFontStack = exportData.textFontStack,
-                                .letterSpacing = exportData.letterSpacing,
-                                .lineHeight = exportData.lineHeight,
-                                .maxWidth = exportData.maxWidth,
-                                .textRotation = exportData.textRotation,
-                                .iconRotation = exportData.iconRotation,
-                                .textJustify = textJustify,
-                                .textPitchAlignment = ctx.getLayout().get<style::TextPitchAlignment>(),
-                                .textRotationAlignment = ctx.getLayout().get<style::TextRotationAlignment>(),
-                                .iconPitchAlignment = ctx.getLayout().get<style::IconPitchAlignment>(),
-                                .iconRotationAlignment = ctx.getLayout().get<style::IconRotationAlignment>(),
-                                .textKeepUpright = ctx.getLayout().get<style::TextKeepUpright>(),
-                                .iconKeepUpright = ctx.getLayout().get<style::IconKeepUpright>(),
-                                .vertical = vertical,
-                                .iconSDF = symbol.hasSdfIcon(),
-                                .iconFitWidth = exportData.iconFitWidth * evaluatedIconSize,
-                                .iconFitHeight = exportData.iconFitHeight * evaluatedIconSize,
-                                .textTransform = textTransform,
-                                .iconTransform = iconTransform,
-                                .textVisualOffset = textVisual.offset,
-                                .iconVisualOffset = iconVisual.offset,
-                                .textVisualWidth = textVisual.width,
-                                .textVisualHeight = textVisual.height,
-                                .iconVisualWidth = iconVisual.width,
-                                .iconVisualHeight = iconVisual.height};
+    PlacedSymbolData symbolData{
+        .key = symbol.getKey(),
+        .lineBrokenText = symbol.getLineBrokenText(),
+        .logicalLineBrokenText = exportData.logicalLineBrokenText,
+        .textRTL = exportData.textRTL,
+        .crossTileID = symbol.getCrossTileID(),
+        .bucketInstanceID = ctx.getBucket().bucketInstanceId,
+        .symbolInstanceIndex = static_cast<uint32_t>(&symbol - ctx.getBucket().symbolInstances.data()),
+        .textCollisionBox = textGeometry.bounds,
+        .iconCollisionBox = iconGeometry.bounds,
+        .textPlaced = placement.text,
+        .iconPlaced = placement.icon,
+        .intersectsTileBorder = false,
+        .viewportPadding = viewportPadding,
+        .anchorPoint = anchorPoint,
+        .tileWrap = ctx.getRenderTile().id.wrap,
+        .tileAnchor = convertPoint<float>(symbol.getAnchor().point),
+        .anchorLatLng = anchorLatLng,
+        .layer = ctx.getBucket().bucketLeaderID,
+        .layers = std::move(layers),
+        .renderGroup = currentRenderGroup,
+        .renderOrder = currentRenderOrder,
+        .sourceID = exportData.sourceID,
+        .sourceLayer = exportData.sourceLayer,
+        .featureProperties = exportData.featureProperties,
+        .featureID = exportData.featureID,
+        .featureType = exportData.featureType,
+        .canonicalZ = exportData.canonicalZ,
+        .canonicalX = exportData.canonicalX,
+        .canonicalY = exportData.canonicalY,
+        .icon = symbol.getIconImageID(),
+        .textSize = evaluatedTextSize,
+        .iconSize = evaluatedIconSize,
+        .textAngle = textGeometry.angle,
+        .alongLine = textAlongLine,
+        .textPath = std::move(textPath),
+        .iconAngle = iconGeometry.angle,
+        .iconAlongLine = iconAlongLine,
+        .iconPath = std::move(iconPath),
+        .visualTextSections = exportData.visualTextSections,
+        .textSections = exportData.textSections,
+        .textFontStack = exportData.textFontStack,
+        .letterSpacing = exportData.letterSpacing,
+        .lineHeight = exportData.lineHeight,
+        .maxWidth = exportData.maxWidth,
+        .textRotation = exportData.textRotation,
+        .iconRotation = exportData.iconRotation,
+        .textJustify = textJustify,
+        .textPitchAlignment = ctx.getLayout().get<style::TextPitchAlignment>(),
+        .textRotationAlignment = ctx.getLayout().get<style::TextRotationAlignment>(),
+        .iconPitchAlignment = ctx.getLayout().get<style::IconPitchAlignment>(),
+        .iconRotationAlignment = ctx.getLayout().get<style::IconRotationAlignment>(),
+        .textKeepUpright = ctx.getLayout().get<style::TextKeepUpright>(),
+        .iconKeepUpright = ctx.getLayout().get<style::IconKeepUpright>(),
+        .vertical = vertical,
+        .iconSDF = symbol.hasSdfIcon(),
+        .iconFitWidth = exportData.iconFitWidth * evaluatedIconSize,
+        .iconFitHeight = exportData.iconFitHeight * evaluatedIconSize,
+        .textTransform = textTransform,
+        .iconTransform = iconTransform,
+        .textVisualOffset = textVisual.offset,
+        .iconVisualOffset = iconVisual.offset,
+        .textVisualWidth = textVisual.width,
+        .textVisualHeight = textVisual.height,
+        .iconVisualWidth = iconVisual.width,
+        .iconVisualHeight = iconVisual.height};
     placedSymbolsData_.emplace_back(std::move(symbolData));
+}
+
+void Placement::refreshPlacedSymbolData(const RenderLayerReferences& layers, const TransformState& state) const {
+    if (!placedSymbolDataCollected_ || placedSymbolsData_.empty() || !updateParameters) return;
+    const auto& projectionMatrix = state.getProjectionMatrix();
+    if (placedSymbolRefreshProjection_ && *placedSymbolRefreshProjection_ == projectionMatrix &&
+        placedSymbolRefreshZoom_ == state.getZoom() && placedSymbolRefreshSize_ == state.getSize()) {
+        return;
+    }
+
+    std::unordered_map<uint32_t, std::vector<PlacedSymbolData*>> symbolsByBucket;
+    symbolsByBucket.reserve(placedSymbolsData_.size());
+    for (auto& data : placedSymbolsData_) {
+        symbolsByBucket[data.bucketInstanceID].push_back(&data);
+    }
+
+    CollisionIndex projection(state, updateParameters->mode, false);
+    CollisionGroups refreshCollisionGroups(updateParameters->crossSourceCollisions);
+    std::unordered_set<PlacedSymbolData*> refreshed;
+    refreshed.reserve(placedSymbolsData_.size());
+
+    struct ExportGeometry {
+        std::optional<mapbox::geometry::box<float>> bounds;
+        bool hasCircle = false;
+        float angle = 0;
+        std::vector<Point<float>> path;
+    };
+    const auto extractGeometry = [](const std::vector<ProjectedCollisionBox>& boxes) {
+        ExportGeometry result;
+        bool hasGeometry = false;
+        float minX = 0, minY = 0, maxX = 0, maxY = 0;
+        Point<float> first{0, 0}, last{0, 0};
+
+        const auto expandBounds = [&](float x1, float y1, float x2, float y2) {
+            if (!hasGeometry) {
+                minX = x1;
+                minY = y1;
+                maxX = x2;
+                maxY = y2;
+                hasGeometry = true;
+            } else {
+                minX = std::min(minX, x1);
+                minY = std::min(minY, y1);
+                maxX = std::max(maxX, x2);
+                maxY = std::max(maxY, y2);
+            }
+        };
+
+        for (const auto& box : boxes) {
+            if (box.isBox()) {
+                const auto& bounds = box.box();
+                expandBounds(bounds.min.x, bounds.min.y, bounds.max.x, bounds.max.y);
+            } else if (box.isCircle()) {
+                const auto& circle = box.circle();
+                const Point<float> center{static_cast<float>(circle.center.x), static_cast<float>(circle.center.y)};
+                if (!result.hasCircle) first = center;
+                last = center;
+                result.hasCircle = true;
+                result.path.push_back(center);
+                expandBounds(center.x - circle.radius,
+                             center.y - circle.radius,
+                             center.x + circle.radius,
+                             center.y + circle.radius);
+            }
+        }
+
+        if (hasGeometry) {
+            result.bounds = mapbox::geometry::box<float>({minX, minY}, {maxX, maxY});
+        }
+        if (result.hasCircle && (first.x != last.x || first.y != last.y)) {
+            result.angle = std::atan2(last.y - first.y, last.x - first.x);
+        }
+
+        return result;
+    };
+
+    const auto refreshSymbol = [&](PlacedSymbolData& data, const SymbolInstance& symbol, const PlacementContext& ctx) {
+        const auto& bucket = ctx.getBucket();
+        const auto& exportData = symbol.getExportData();
+        const auto variableOffset = variableOffsets.find(symbol.getCrossTileID());
+
+        const PlacedSymbol* placedText = nullptr;
+        const CollisionFeature* textFeature = nullptr;
+        auto textIndex = data.vertical ? symbol.getPlacedVerticalTextIndex()
+                                       : symbol.getDefaultHorizontalPlacedTextIndex();
+        if (!textIndex && data.vertical) textIndex = symbol.getDefaultHorizontalPlacedTextIndex();
+        if (textIndex && *textIndex < bucket.text.placedSymbols.size()) {
+            placedText = &bucket.text.placedSymbols[*textIndex];
+            textFeature = data.vertical && symbol.getVerticalTextCollisionFeature()
+                              ? &*symbol.getVerticalTextCollisionFeature()
+                              : &symbol.getTextCollisionFeature();
+        }
+
+        const PlacedSymbol* placedIcon = nullptr;
+        const CollisionFeature* iconFeature = nullptr;
+        if (const auto iconIndex = symbol.getPlacedIconIndex()) {
+            const auto& iconBuffer = symbol.hasSdfIcon() ? bucket.sdfIcon : bucket.icon;
+            if (*iconIndex < iconBuffer.placedSymbols.size()) {
+                placedIcon = &iconBuffer.placedSymbols[*iconIndex];
+                iconFeature = data.vertical && symbol.getVerticalIconCollisionFeature()
+                                  ? &*symbol.getVerticalIconCollisionFeature()
+                                  : &symbol.getIconCollisionFeature();
+            }
+        }
+
+        float evaluatedTextSize = data.textSize;
+        if (placedText) {
+            evaluatedTextSize = evaluateSizeForFeature(ctx.partiallyEvaluatedTextSize, *placedText);
+        }
+        float evaluatedIconSize = data.iconSize;
+        if (placedIcon) {
+            evaluatedIconSize = evaluateSizeForFeature(ctx.partiallyEvaluatedIconSize, *placedIcon);
+        }
+
+        Point<float> layoutShift;
+        if (variableOffset != variableOffsets.end()) {
+            const auto& variable = variableOffset->second;
+            layoutShift = calculateVariableLayoutOffset(variable.anchor,
+                                                        variable.width,
+                                                        variable.height,
+                                                        variable.offset,
+                                                        variable.textBoxScale,
+                                                        ctx.rotateTextWithMap,
+                                                        ctx.pitchTextWithMap,
+                                                        static_cast<float>(state.getBearing()));
+        }
+
+        std::vector<ProjectedCollisionBox> projectedTextBoxes;
+        if (data.textPlaced && placedText && textFeature) {
+            projection.projectFeature(*textFeature,
+                                      layoutShift,
+                                      ctx.getRenderTile().matrix,
+                                      ctx.textLabelPlaneMatrix,
+                                      ctx.pixelRatio,
+                                      *placedText,
+                                      ctx.scale,
+                                      evaluatedTextSize,
+                                      ctx.pitchTextWithMap,
+                                      projectedTextBoxes);
+        }
+        std::vector<ProjectedCollisionBox> projectedIconBoxes;
+        if (data.iconPlaced && placedIcon && iconFeature) {
+            const Point<float> iconShift = ctx.hasIconTextFit && variableOffset != variableOffsets.end() &&
+                                                   data.textPlaced
+                                               ? layoutShift
+                                               : Point<float>{};
+            projection.projectFeature(*iconFeature,
+                                      iconShift,
+                                      ctx.getRenderTile().matrix,
+                                      ctx.iconLabelPlaneMatrix,
+                                      ctx.pixelRatio,
+                                      *placedIcon,
+                                      ctx.scale,
+                                      evaluatedIconSize,
+                                      ctx.pitchTextWithMap,
+                                      projectedIconBoxes);
+        }
+
+        auto textGeometry = extractGeometry(projectedTextBoxes);
+        auto iconGeometry = extractGeometry(projectedIconBoxes);
+        const bool textAlongLine = data.alongLine;
+        const bool iconAlongLine = data.iconAlongLine;
+
+        struct WidgetTransform {
+            std::array<float, 4> matrix;
+            Point<float> unitX;
+            Point<float> unitY;
+            float perspectiveRatio = 1;
+        };
+        const auto widgetTransform = [&](bool text, float rotation) {
+            const bool pitchWithMap = text ? ctx.pitchTextWithMap : ctx.pitchIconWithMap;
+            const bool rotateWithMap = text ? ctx.rotateTextWithMap : ctx.rotateIconWithMap;
+            const auto& labelPlane = text ? ctx.textLabelPlaneMatrix : ctx.iconLabelPlaneMatrix;
+            const auto& tileMatrix = ctx.getRenderTile().matrix;
+            const auto glMatrix = getGlCoordMatrix(
+                tileMatrix, pitchWithMap, rotateWithMap, state, ctx.pixelsToTileUnits);
+            const auto tileAnchor = convertPoint<float>(symbol.getAnchor().point);
+            const auto labelAnchor = project(tileAnchor, labelPlane).first;
+            const auto origin = project(labelAnchor, glMatrix).first;
+            const auto xPoint = project(labelAnchor + Point<float>{1, 0}, glMatrix).first;
+            const auto yPoint = project(labelAnchor + Point<float>{0, 1}, glMatrix).first;
+            const float halfWidth = static_cast<float>(state.getSize().width) * 0.5f;
+            const float halfHeight = static_cast<float>(state.getSize().height) * 0.5f;
+            const float cameraToAnchorDistance = project(tileAnchor, tileMatrix).second;
+            const float distanceRatio = pitchWithMap ? cameraToAnchorDistance / state.getCameraToCenterDistance()
+                                                     : state.getCameraToCenterDistance() / cameraToAnchorDistance;
+            const float perspectiveRatio = exportData.iconOffsetDefined
+                                               ? 1.0f
+                                               : util::clamp(0.5f + 0.5f * distanceRatio, 0.0f, 4.0f);
+            const Point<float> xAxis{(xPoint.x - origin.x) * halfWidth, -(xPoint.y - origin.y) * halfHeight};
+            const Point<float> yAxis{(yPoint.x - origin.x) * halfWidth, -(yPoint.y - origin.y) * halfHeight};
+            float widgetRotation = rotation;
+            const bool rotateInShader = rotateWithMap && !pitchWithMap &&
+                                        ctx.getLayout().get<style::SymbolPlacement>() ==
+                                            style::SymbolPlacementType::Point;
+            if (rotateInShader) {
+                const auto mapAnchor = project(tileAnchor, tileMatrix).first;
+                const auto mapEast = project(tileAnchor + Point<float>{1, 0}, tileMatrix).first;
+                const Point<float> mapEastAxis{(mapEast.x - mapAnchor.x) * halfWidth,
+                                               -(mapEast.y - mapAnchor.y) * halfHeight};
+                if (std::hypot(mapEastAxis.x, mapEastAxis.y) > 1.0e-6f) {
+                    widgetRotation += std::atan2(mapEastAxis.y, mapEastAxis.x);
+                }
+            }
+            const float cosine = std::cos(widgetRotation);
+            const float sine = std::sin(widgetRotation);
+            const Point<float> unitX{xAxis.x * cosine + yAxis.x * sine, xAxis.y * cosine + yAxis.y * sine};
+            const Point<float> unitY{-xAxis.x * sine + yAxis.x * cosine, -xAxis.y * sine + yAxis.y * cosine};
+
+            return WidgetTransform{
+                .matrix = {unitX.x * perspectiveRatio,
+                           unitX.y * perspectiveRatio,
+                           unitY.x * perspectiveRatio,
+                           unitY.y * perspectiveRatio},
+                .unitX = unitX,
+                .unitY = unitY,
+                .perspectiveRatio = perspectiveRatio,
+            };
+        };
+
+        const auto textWidgetTransform = widgetTransform(true, exportData.textRotation);
+        const auto iconWidgetTransform = widgetTransform(false, exportData.iconRotation);
+        const auto textTransform = textWidgetTransform.matrix;
+        auto iconTransform = iconWidgetTransform.matrix;
+        const auto firstValidTextBounds = [&]() -> const SymbolVisualBounds& {
+            if (data.vertical && exportData.verticalTextBounds.valid) return exportData.verticalTextBounds;
+            const auto* selected = &exportData.centerTextBounds;
+            if (data.textJustify == style::TextJustifyType::Right) selected = &exportData.rightTextBounds;
+            if (data.textJustify == style::TextJustifyType::Left) selected = &exportData.leftTextBounds;
+            if (selected->valid) return *selected;
+            if (exportData.rightTextBounds.valid) return exportData.rightTextBounds;
+            if (exportData.centerTextBounds.valid) return exportData.centerTextBounds;
+
+            return exportData.leftTextBounds;
+        };
+        struct VisualGeometry {
+            Point<float> offset;
+            float width = 0;
+            float height = 0;
+        };
+        const auto visualGeometry =
+            [](const SymbolVisualBounds& bounds, const std::array<float, 4>& transform, float scale) {
+                VisualGeometry result;
+                if (!bounds.valid) return result;
+                const Point<float> center{(bounds.left + bounds.right) * 0.5f * scale,
+                                          (bounds.top + bounds.bottom) * 0.5f * scale};
+                result.offset = {transform[0] * center.x + transform[2] * center.y,
+                                 transform[1] * center.x + transform[3] * center.y};
+                result.width = (bounds.right - bounds.left) * scale;
+                result.height = (bounds.bottom - bounds.top) * scale;
+
+                return result;
+            };
+        auto textVisual = visualGeometry(
+            firstValidTextBounds(), textTransform, evaluatedTextSize / static_cast<float>(util::ONE_EM));
+        const auto& selectedIconBounds = data.vertical && exportData.verticalIconBounds.valid
+                                             ? exportData.verticalIconBounds
+                                             : exportData.iconBounds;
+        auto iconVisual = visualGeometry(selectedIconBounds, iconTransform, evaluatedIconSize);
+        struct StretchAxis {
+            float shaderScale;
+            float extentScale;
+        };
+        const auto stretchAxis = [evaluatedIconSize, &iconWidgetTransform](float stretchFraction) {
+            const float fixedFraction = 1.0f - stretchFraction;
+            const float fontScale = evaluatedIconSize * iconWidgetTransform.perspectiveRatio;
+            const float shaderScale = std::max(fixedFraction, fontScale);
+
+            return StretchAxis{
+                .shaderScale = shaderScale,
+                .extentScale = (shaderScale - fixedFraction) / stretchFraction,
+            };
+        };
+        if (selectedIconBounds.valid && evaluatedIconSize > 0 &&
+            (exportData.iconStretchFractionX < 1 || exportData.iconStretchFractionY < 1)) {
+            const auto scaleX = stretchAxis(exportData.iconStretchFractionX);
+            const auto scaleY = stretchAxis(exportData.iconStretchFractionY);
+            const float widgetScaleX = scaleX.extentScale / evaluatedIconSize;
+            const float widgetScaleY = scaleY.extentScale / evaluatedIconSize;
+            iconTransform = {
+                iconWidgetTransform.unitX.x * widgetScaleX,
+                iconWidgetTransform.unitX.y * widgetScaleX,
+                iconWidgetTransform.unitY.x * widgetScaleY,
+                iconWidgetTransform.unitY.y * widgetScaleY,
+            };
+            const float width = selectedIconBounds.right - selectedIconBounds.left;
+            const float height = selectedIconBounds.bottom - selectedIconBounds.top;
+            const Point<float> center{
+                selectedIconBounds.left * scaleX.shaderScale + width * scaleX.extentScale * 0.5f,
+                selectedIconBounds.top * scaleY.shaderScale + height * scaleY.extentScale * 0.5f,
+            };
+            iconVisual.offset = {
+                iconWidgetTransform.unitX.x * center.x + iconWidgetTransform.unitY.x * center.y,
+                iconWidgetTransform.unitX.y * center.x + iconWidgetTransform.unitY.y * center.y,
+            };
+            iconVisual.width = width * scaleX.extentScale;
+            iconVisual.height = height * scaleY.extentScale;
+        }
+
+        if (variableOffset != variableOffsets.end()) {
+            const auto& tile = ctx.getRenderTile();
+            const auto tileAnchor = convertPoint<float>(symbol.getAnchor().point);
+            const auto projectedAnchor = project(tileAnchor,
+                                                 ctx.pitchTextWithMap ? tile.matrix : ctx.textLabelPlaneMatrix);
+            const float perspectiveRatio = 0.5f + 0.5f * (state.getCameraToCenterDistance() / projectedAnchor.second);
+            float renderTextSize = evaluatedTextSize * perspectiveRatio / util::ONE_EM;
+            if (ctx.pitchTextWithMap) {
+                renderTextSize *= ctx.getBucket().tilePixelRatio / ctx.scale;
+            }
+            const auto& variable = variableOffset->second;
+            auto shift = calculateVariableRenderShift(variable.anchor,
+                                                      variable.width,
+                                                      variable.height,
+                                                      variable.offset,
+                                                      variable.textBoxScale,
+                                                      renderTextSize);
+            Point<float> shiftedAnchor;
+            if (ctx.pitchTextWithMap) {
+                shiftedAnchor = project(tileAnchor + shift, ctx.textLabelPlaneMatrix).first;
+            } else if (ctx.rotateTextWithMap) {
+                shift = util::rotate(shift, -state.getPitch());
+                shiftedAnchor = projectedAnchor.first + shift;
+            } else {
+                shiftedAnchor = projectedAnchor.first + shift;
+            }
+
+            const auto labelAnchor = project(tileAnchor, ctx.textLabelPlaneMatrix).first;
+            const auto glMatrix = getGlCoordMatrix(
+                tile.matrix, ctx.pitchTextWithMap, ctx.rotateTextWithMap, state, ctx.pixelsToTileUnits);
+            const auto baseScreen = project(labelAnchor, glMatrix).first;
+            const auto shiftedScreen = project(shiftedAnchor, glMatrix).first;
+            const float halfWidth = static_cast<float>(state.getSize().width) * 0.5f;
+            const float halfHeight = static_cast<float>(state.getSize().height) * 0.5f;
+            const Point<float> variableAnchorScreenShift{
+                (shiftedScreen.x - baseScreen.x) * halfWidth,
+                -(shiftedScreen.y - baseScreen.y) * halfHeight,
+            };
+            textVisual.offset += variableAnchorScreenShift;
+            if (ctx.hasIconTextFit) iconVisual.offset += variableAnchorScreenShift;
+        }
+
+        const auto anchorPoint = projection.projectPoint(ctx.getRenderTile().matrix, symbol.getAnchor().point);
+        const auto exportSourceLineGeometry = [&](ExportGeometry& geometry, bool retainPath) {
+            if (!exportData.sourceLineSegment) return;
+            const auto& lineSegment = *exportData.sourceLineSegment;
+            std::vector<Point<float>> projectedPath;
+            const auto appendProjected = [&](const Point<float>& point) {
+                const auto projected = projection.projectPoint(ctx.getRenderTile().matrix, point);
+                if (projectedPath.empty() || projectedPath.back() != projected) {
+                    projectedPath.push_back(projected);
+                }
+            };
+            appendProjected(lineSegment[0]);
+            appendProjected(convertPoint<float>(symbol.getAnchor().point));
+            appendProjected(lineSegment[1]);
+            if (projectedPath.size() < 2) return;
+            const auto& first = projectedPath.front();
+            const auto& last = projectedPath.back();
+            geometry.angle = std::atan2(last.y - first.y, last.x - first.x);
+            if (retainPath) geometry.path = std::move(projectedPath);
+        };
+        if (data.textPlaced && textAlongLine && textGeometry.path.size() < 2) {
+            exportSourceLineGeometry(textGeometry, false);
+        }
+        if (data.iconPlaced && iconAlongLine) {
+            exportSourceLineGeometry(iconGeometry, true);
+        }
+        const float viewportPadding = projection.getViewportPadding();
+        const auto anchorLatLng = state.screenCoordinateToLatLng(
+            ScreenCoordinate{anchorPoint.x - viewportPadding,
+                             state.getSize().height - (anchorPoint.y - viewportPadding)},
+            LatLng::Wrapped);
+        auto textPath = std::move(textGeometry.path);
+        for (auto& point : textPath) point -= anchorPoint;
+        auto iconPath = std::move(iconGeometry.path);
+        for (auto& point : iconPath) point -= anchorPoint;
+
+        data.textCollisionBox = textGeometry.bounds;
+        data.iconCollisionBox = iconGeometry.bounds;
+        data.viewportPadding = viewportPadding;
+        data.anchorPoint = anchorPoint;
+        data.anchorLatLng = anchorLatLng;
+        data.textSize = evaluatedTextSize;
+        data.iconSize = evaluatedIconSize;
+        data.textAngle = textGeometry.angle;
+        data.textPath = std::move(textPath);
+        data.iconAngle = iconGeometry.angle;
+        data.iconPath = std::move(iconPath);
+        data.iconFitWidth = exportData.iconFitWidth * evaluatedIconSize;
+        data.iconFitHeight = exportData.iconFitHeight * evaluatedIconSize;
+        data.textTransform = textTransform;
+        data.iconTransform = iconTransform;
+        data.textVisualOffset = textVisual.offset;
+        data.iconVisualOffset = iconVisual.offset;
+        data.textVisualWidth = textVisual.width;
+        data.textVisualHeight = textVisual.height;
+        data.iconVisualWidth = iconVisual.width;
+        data.iconVisualHeight = iconVisual.height;
+    };
+
+    const float zoom = static_cast<float>(state.getZoom());
+    for (const auto& layerRef : layers) {
+        const auto& layer = layerRef.get();
+        for (const auto& item : layer.getPlacementData()) {
+            const auto& bucket = static_cast<const SymbolBucket&>(item.bucket.get());
+            const auto found = symbolsByBucket.find(bucket.bucketInstanceId);
+            if (found == symbolsByBucket.end()) continue;
+            PlacementContext ctx{bucket, item.tile, state, zoom, refreshCollisionGroups.get(item.sourceId)};
+            const auto& tileID = item.tile.get().id;
+            for (auto* data : found->second) {
+                if (refreshed.contains(data) || data->layer != bucket.bucketLeaderID || data->tileWrap != tileID.wrap ||
+                    data->canonicalZ != tileID.canonical.z || data->canonicalX != tileID.canonical.x ||
+                    data->canonicalY != tileID.canonical.y ||
+                    data->symbolInstanceIndex >= bucket.symbolInstances.size()) {
+                    continue;
+                }
+                const auto& symbol = bucket.symbolInstances[data->symbolInstanceIndex];
+                if (symbol.getCrossTileID() != data->crossTileID) continue;
+                refreshSymbol(*data, symbol, ctx);
+                refreshed.insert(data);
+            }
+        }
+    }
+    placedSymbolRefreshProjection_ = projectionMatrix;
+    placedSymbolRefreshZoom_ = state.getZoom();
+    placedSymbolRefreshSize_ = state.getSize();
 }
 
 const CollisionIndex& Placement::getCollisionIndex() const {

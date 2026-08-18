@@ -34,14 +34,14 @@ inline float findViewportPadding(const TransformState& transformState, MapMode m
 
 } // namespace
 
-CollisionIndex::CollisionIndex(const TransformState& transformState_, MapMode mapMode)
+CollisionIndex::CollisionIndex(const TransformState& transformState_, MapMode mapMode, bool initializeGrid)
     : transformState(transformState_),
       viewportPadding(findViewportPadding(transformState_, mapMode)),
-      collisionGrid(transformState.getSize().width + 2 * viewportPadding,
-                    transformState.getSize().height + 2 * viewportPadding,
+      collisionGrid(initializeGrid ? transformState.getSize().width + 2 * viewportPadding : 1,
+                    initializeGrid ? transformState.getSize().height + 2 * viewportPadding : 1,
                     25),
-      ignoredGrid(transformState.getSize().width + 2 * viewportPadding,
-                  transformState.getSize().height + 2 * viewportPadding,
+      ignoredGrid(initializeGrid ? transformState.getSize().width + 2 * viewportPadding : 1,
+                  initializeGrid ? transformState.getSize().height + 2 * viewportPadding : 1,
                   25),
       screenRightBoundary(transformState.getSize().width + viewportPadding),
       screenBottomBoundary(transformState.getSize().height + viewportPadding),
@@ -188,6 +188,41 @@ std::pair<bool, bool> CollisionIndex::placeFeature(
                                 collisionGroupPredicate,
                                 projectedBoxes);
     }
+}
+
+void CollisionIndex::projectFeature(const CollisionFeature& feature,
+                                    Point<float> shift,
+                                    const mat4& posMatrix,
+                                    const mat4& labelPlaneMatrix,
+                                    const float textPixelRatio,
+                                    const PlacedSymbol& symbol,
+                                    const float scale,
+                                    const float fontSize,
+                                    const bool pitchWithMap,
+                                    std::vector<ProjectedCollisionBox>& projectedBoxes) {
+    assert(projectedBoxes.empty());
+    if (!feature.alongLine) {
+        if (feature.boxes.empty()) return;
+        const auto boundaries = getProjectedCollisionBoundaries(
+            posMatrix, shift, textPixelRatio, feature.boxes.front());
+        projectedBoxes.emplace_back(boundaries[0], boundaries[1], boundaries[2], boundaries[3]);
+
+        return;
+    }
+
+    placeLineFeature(feature,
+                     posMatrix,
+                     labelPlaneMatrix,
+                     textPixelRatio,
+                     symbol,
+                     scale,
+                     fontSize,
+                     true,
+                     pitchWithMap,
+                     false,
+                     std::nullopt,
+                     std::nullopt,
+                     projectedBoxes);
 }
 
 std::pair<bool, bool> CollisionIndex::placeLineFeature(

@@ -128,6 +128,7 @@ public:
     virtual bool transitionsEnabled() const;
     virtual void collectPlacedSymbolData(bool enable) { placedSymbolDataCollected_ = enable; }
     virtual const std::vector<PlacedSymbolData>& getPlacedSymbolsData() const;
+    void refreshPlacedSymbolData(const RenderLayerReferences&, const TransformState&) const;
 
     const CollisionIndex& getCollisionIndex() const;
     TimePoint getCommitTime() const { return commitTime; }
@@ -215,7 +216,10 @@ protected:
 
     // Placed symbol data collection (works in all map modes)
     bool placedSymbolDataCollected_ = false;
-    std::vector<PlacedSymbolData> placedSymbolsData_;
+    mutable std::vector<PlacedSymbolData> placedSymbolsData_;
+    mutable std::optional<mat4> placedSymbolRefreshProjection_;
+    mutable std::optional<double> placedSymbolRefreshZoom_;
+    mutable std::optional<Size> placedSymbolRefreshSize_;
 };
 
 } // namespace mln

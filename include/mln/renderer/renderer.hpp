@@ -42,6 +42,9 @@ struct PlacedSymbolData {
     bool textRTL = false;
     /// Stable identity assigned by CrossTileSymbolIndex
     uint32_t crossTileID = 0;
+    /// Exact source within a symbol bucket used by camera-only refreshes.
+    uint32_t bucketInstanceID = 0;
+    uint32_t symbolInstanceIndex = 0;
     /// If symbol contains text, text collision box in viewport coordinates
     std::optional<mapbox::geometry::box<float>> textCollisionBox;
     /// If symbol contains icon, icon collision box in viewport coordinates
@@ -198,7 +201,8 @@ public:
      * @brief If collecting of the placed symbols data is enabled, returns the
      * reference to the `PlacedSymbolData` vector holding the collected data.
      *
-     * Note: the returned vector gets re-populated at every `render()` call.
+     * Placement changes repopulate the vector. Camera-only renders refresh its
+     * screen geometry without running collision placement again.
      *
      * @return collected placed symbols data
      */

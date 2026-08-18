@@ -498,7 +498,7 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
             placementUpdatePeriodOverride = std::optional<Duration>(Milliseconds(30));
         }
 
-        renderTreeParameters->placementChanged = placedSymbolDataCollected ||
+        renderTreeParameters->placementChanged = placedSymbolDataCollectionChanged ||
                                                  !placementController.placementIsRecent(
                                                      updateParameters->timePoint,
                                                      static_cast<float>(updateParameters->transformState.getZoom()),
@@ -509,12 +509,17 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
             placement->collectPlacedSymbolData(placedSymbolDataCollected);
             placement->placeLayers(layersNeedPlacement);
             placementController.setPlacement(std::move(placement));
+            placedSymbolDataCollectionChanged = false;
             crossTileSymbolIndex.pruneUnusedLayers(usedSymbolLayers);
             for (const auto& entry : renderSources) {
                 entry.second->updateFadingTiles();
             }
         } else {
             placementController.setPlacementStale();
+            if (placedSymbolDataCollected) {
+                placementController.getPlacement()->refreshPlacedSymbolData(layersNeedPlacement,
+                                                                            updateParameters->transformState);
+            }
         }
         renderTreeParameters->symbolFadeChange = placementController.getPlacement()->symbolFadeChange(
             updateParameters->timePoint);
@@ -791,6 +796,9 @@ void RenderOrchestrator::dumpDebugLogs() {
 }
 
 void RenderOrchestrator::collectPlacedSymbolData(bool enable) {
+    if (placedSymbolDataCollected != enable) {
+        placedSymbolDataCollectionChanged = true;
+    }
     placedSymbolDataCollected = enable;
 }
 
