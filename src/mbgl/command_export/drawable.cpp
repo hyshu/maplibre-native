@@ -765,6 +765,7 @@ void Drawable::draw(PaintParameters& parameters) const {
         cmd.subLayerIndex = getSubLayerIndex();
         cmd.bufferId = bufferId;
         cmd.bufferVersion = bufferVersion;
+        cmd.indexVersion = indexVersion;
         cmd.cameraDistance = cameraDistance;
         cmd.flags = extraFlags;
         cmd.stencilReference = stencilReference;
@@ -822,6 +823,7 @@ void Drawable::setIndexData(gfx::IndexVectorBasePtr indices, std::vector<UniqueD
     indexVector = std::move(indices);
     segments = std::move(segs);
     ++bufferVersion;
+    ++indexVersion;
 }
 
 void Drawable::setVertices(std::vector<uint8_t>&& data, std::size_t count, gfx::AttributeDataType type) {
@@ -885,7 +887,8 @@ void Drawable::updateVertexAttributes(gfx::VertexAttributeArrayPtr attrs,
 
     const bool attributesChanged = attributeBindingsChanged || !attributeUpdateTime ||
                                    (attrs && attrs->isModifiedAfter(*attributeUpdateTime));
-    const bool indicesChanged = indexVector != indices || vertexCount != count;
+    const bool vertexCountChanged = vertexCount != count;
+    const bool indicesChanged = indexVector != indices;
     bool segmentsChanged = segments.size() != segmentCount;
     if (!segmentsChanged) {
         for (std::size_t i = 0; i < segmentCount; ++i) {
@@ -905,8 +908,11 @@ void Drawable::updateVertexAttributes(gfx::VertexAttributeArrayPtr attrs,
     vertexAttributes = std::move(attrs);
     vertexCount = count;
     indexVector = std::move(indices);
-    if (attributesChanged || indicesChanged || segmentsChanged) {
+    if (attributesChanged || vertexCountChanged || segmentsChanged) {
         ++bufferVersion;
+    }
+    if (indicesChanged || segmentsChanged) {
+        ++indexVersion;
     }
     attributeUpdateTime = util::MonotonicTimer::now();
 
