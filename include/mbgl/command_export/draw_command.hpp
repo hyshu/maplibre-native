@@ -130,7 +130,7 @@ struct DrawCommand {
     // Buffer identity for consumer-side GPU buffer caching. Raw pointers are
     // unsafe as cache keys: freed tile memory can be reallocated at the same
     // address for different data. bufferId is unique per drawable (never
-    // reused); bufferVersion bumps when the drawable's buffers are replaced.
+    // reused); bufferVersion tracks vertex/attribute generations.
     uint32_t bufferId;      // 276
     uint32_t bufferVersion; // 280
 
@@ -165,8 +165,13 @@ struct DrawCommand {
     // existing offset while extending the FFI ABI from 392 to 400 bytes.
     uint32_t stencilReference;   // 392
     StencilModeType stencilMode; // 396
+
+    // Index generation is independent from vertex/paint attribute updates.
+    // Consumers use this for index-buffer caching so paint-only vertex changes
+    // do not invalidate immutable index data.
+    uint32_t indexVersion; // 400
 };
-static_assert(sizeof(DrawCommand) == 400, "DrawCommand size must be stable for FFI");
+static_assert(sizeof(DrawCommand) == 408, "DrawCommand size must be stable for FFI");
 static_assert(static_cast<uint32_t>(ShaderType::ClippingMask) == 11);
 static_assert(static_cast<uint32_t>(ShaderType::BackgroundPattern) == 12);
 static_assert(static_cast<uint32_t>(TextureFilterType::Nearest) == 0);
@@ -212,6 +217,7 @@ COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texFilter, 384);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, subLayerIndex, 388);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, stencilReference, 392);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, stencilMode, 396);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, indexVersion, 400);
 
 /// Per-frame data accumulated during render and read by an external consumer.
 struct FrameData {
