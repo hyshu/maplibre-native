@@ -45,6 +45,7 @@ public:
     /// Unique buffer identity for consumer-side GPU buffer caching.
     uint32_t getBufferId() const { return bufferId; }
     uint32_t getBufferVersion() const { return bufferVersion; }
+    uint32_t getIndexVersion() const { return indexVersion; }
 
     /// Set the group-wide reference returned by stencilModeFor3D(). The
     /// reference is cached at TileLayerGroup scope because asking
@@ -115,6 +116,7 @@ private:
 
     uint32_t bufferId;
     mutable uint32_t bufferVersion = 0;
+    uint32_t indexVersion = 0;
 
     UniformBufferArray uniformBuffers;
 
