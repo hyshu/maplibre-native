@@ -94,15 +94,30 @@ struct ContentFingerprint {
 
 ContentFingerprint fingerprintBytes(const void* data, std::size_t size) {
     const auto* bytes = static_cast<const uint8_t*>(data);
-    uint64_t first = 14695981039346656037ULL;
-    uint64_t second = 0x9e3779b97f4a7c15ULL ^ static_cast<uint64_t>(size);
-    for (std::size_t i = 0; i < size; ++i) {
-        first ^= bytes[i];
-        first *= 1099511628211ULL;
-        second ^= static_cast<uint64_t>(bytes[i]) + 0x9dULL;
-        second *= 14029467366897019727ULL;
-        second ^= second >> 29;
+    uint64_t first = 14695981039346656037ULL ^ static_cast<uint64_t>(size);
+    uint64_t second = 0x9e3779b97f4a7c15ULL + static_cast<uint64_t>(size);
+    std::size_t offset = 0;
+    while (offset + sizeof(uint64_t) <= size) {
+        uint64_t word;
+        std::memcpy(&word, bytes + offset, sizeof(word));
+        first ^= word + 0x517cc1b727220a95ULL;
+        first *= 0x9e3779b185ebca87ULL;
+        first ^= first >> 33;
+        second ^= std::rotl(word * 0xc2b2ae3d27d4eb4fULL, 29);
+        second *= 0x165667b19e3779f9ULL;
+        second ^= second >> 31;
+        offset += sizeof(uint64_t);
     }
+    if (offset < size) {
+        uint64_t tail = 0;
+        std::memcpy(&tail, bytes + offset, size - offset);
+        first ^= tail + 0x27d4eb2f165667c5ULL;
+        first *= 0x9e3779b185ebca87ULL;
+        second ^= std::rotl(tail + 0x94d049bb133111ebULL, 23);
+        second *= 0xc2b2ae3d27d4eb4fULL;
+    }
+    first ^= first >> 29;
+    second ^= second >> 32;
     return {first, second, size};
 }
 
@@ -212,14 +227,16 @@ StableFillExtrusionIdentity stableFillExtrusionIdentityFor(
                               (indexFingerprint = fingerprintBytes(indexData, indexBytes)) != state.indexFingerprint;
 
     const bool identityOverflow =
-        (vertexChanged && state.vertexVersion == std::numeric_limits<uint32_t>::max()) ||
+        ((vertexChanged || indexChanged) && state.vertexVersion == std::numeric_limits<uint32_t>::max()) ||
         (indexChanged && state.indexVersion == std::numeric_limits<uint32_t>::max());
     if (identityOverflow) {
         state.bufferId = nextStableFillExtrusionBufferId();
         state.vertexVersion = 1;
         state.indexVersion = 1;
     } else {
-        if (vertexChanged) ++state.vertexVersion;
+        // Until every consumer reads indexVersion, bufferVersion remains a
+        // conservative generation that also covers index-only changes.
+        if (vertexChanged || indexChanged) ++state.vertexVersion;
         if (indexChanged) ++state.indexVersion;
     }
 
@@ -1202,7 +1219,7 @@ void Drawable::updateVertexAttributes(gfx::VertexAttributeArrayPtr attrs,
     vertexAttributes = std::move(attrs);
     vertexCount = count;
     indexVector = std::move(indices);
-    if (attributesChanged || vertexCountChanged || segmentsChanged) {
+    if (attributesChanged || indicesChanged || vertexCountChanged || segmentsChanged) {
         ++bufferVersion;
     }
     if (indicesChanged || segmentsChanged) {
