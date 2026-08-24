@@ -39,6 +39,7 @@ namespace {
 
 constexpr uint32_t kStableFillExtrusionBufferIdNamespace = 0xC0000000u;
 constexpr uint32_t kStableFillExtrusionBufferIdValueMask = 0x3fffffffu;
+constexpr std::size_t kStableFillExtrusionIdentityLimit = 32768;
 
 struct FillExtrusionAttributeRevision {
     bool present = false;
@@ -83,8 +84,29 @@ struct FillExtrusionIndexRevision {
     bool operator==(const FillExtrusionIndexRevision&) const = default;
 };
 
+struct ContentFingerprint {
+    uint64_t first = 0;
+    uint64_t second = 0;
+    std::size_t size = 0;
+
+    bool operator==(const ContentFingerprint&) const = default;
+};
+
+ContentFingerprint fingerprintBytes(const void* data, std::size_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    uint64_t first = 14695981039346656037ULL;
+    uint64_t second = 0x9e3779b97f4a7c15ULL ^ static_cast<uint64_t>(size);
+    for (std::size_t i = 0; i < size; ++i) {
+        first ^= bytes[i];
+        first *= 1099511628211ULL;
+        second ^= static_cast<uint64_t>(bytes[i]) + 0x9dULL;
+        second *= 14029467366897019727ULL;
+        second ^= second >> 29;
+    }
+    return {first, second, size};
+}
+
 struct StableFillExtrusionKey {
-    int64_t bucketId = 0;
     uint8_t tileZ = 0;
     uint32_t tileX = 0;
     uint32_t tileY = 0;
@@ -92,29 +114,27 @@ struct StableFillExtrusionKey {
     uint32_t segmentOrdinal = 0;
 
     bool operator<(const StableFillExtrusionKey& other) const {
-        return std::tie(bucketId, tileZ, tileX, tileY, layerIndex, segmentOrdinal) <
-               std::tie(other.bucketId,
-                        other.tileZ,
-                        other.tileX,
-                        other.tileY,
-                        other.layerIndex,
-                        other.segmentOrdinal);
+        return std::tie(tileZ, tileX, tileY, layerIndex, segmentOrdinal) <
+               std::tie(other.tileZ, other.tileX, other.tileY, other.layerIndex, other.segmentOrdinal);
     }
 };
 
 struct StableFillExtrusionState {
-    std::weak_ptr<Bucket> bucket;
     uint32_t bufferId = 0;
-    uint32_t version = 1;
-    int64_t drawableId = 0;
-    uint32_t localBufferVersion = 0;
+    uint32_t vertexVersion = 1;
+    uint32_t indexVersion = 1;
+    int64_t sourceBucketId = 0;
     FillExtrusionVertexRevision vertexRevision;
     FillExtrusionIndexRevision indexRevision;
+    ContentFingerprint vertexFingerprint;
+    ContentFingerprint indexFingerprint;
+    uint64_t lastUsedLookup = 0;
 };
 
 struct StableFillExtrusionIdentity {
     uint32_t bufferId = 0;
-    uint32_t version = 0;
+    uint32_t vertexVersion = 0;
+    uint32_t indexVersion = 0;
 };
 
 uint32_t nextStableFillExtrusionBufferId() {
@@ -126,69 +146,90 @@ uint32_t nextStableFillExtrusionBufferId() {
     return kStableFillExtrusionBufferIdNamespace | value;
 }
 
+void trimStableFillExtrusionIdentities(std::map<StableFillExtrusionKey, StableFillExtrusionState>& states) {
+    if (states.size() <= kStableFillExtrusionIdentityLimit) return;
+
+    auto oldest = states.begin();
+    for (auto it = std::next(states.begin()); it != states.end(); ++it) {
+        if (it->second.lastUsedLookup < oldest->second.lastUsedLookup) {
+            oldest = it;
+        }
+    }
+    states.erase(oldest);
+}
+
 StableFillExtrusionIdentity stableFillExtrusionIdentityFor(
     const std::shared_ptr<Bucket>& bucket,
     const OverscaledTileID& tileID,
     uint32_t layerIndex,
     uint32_t segmentOrdinal,
-    int64_t drawableId,
-    uint32_t localBufferVersion,
     const FillExtrusionVertexRevision& vertexRevision,
-    const FillExtrusionIndexRevision& indexRevision) {
-    static std::map<StableFillExtrusionKey, StableFillExtrusionState> states;
-    static uint32_t lookupCount = 0;
-
-    if ((++lookupCount & 0xffu) == 0) {
-        for (auto it = states.begin(); it != states.end();) {
-            if (it->second.bucket.expired()) {
-                it = states.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
+    const FillExtrusionIndexRevision& indexRevision,
+    const void* vertexData,
+    std::size_t vertexBytes,
+    const void* indexData,
+    std::size_t indexBytes) {
+    thread_local std::map<StableFillExtrusionKey, StableFillExtrusionState> states;
+    thread_local uint64_t lookupCount = 0;
+    ++lookupCount;
 
     const auto& canonical = tileID.canonical;
     const StableFillExtrusionKey key{
-        bucket->getID().id(),
         canonical.z,
         canonical.x,
         canonical.y,
         layerIndex,
         segmentOrdinal,
     };
+    const int64_t sourceBucketId = bucket->getID().id();
 
     const auto found = states.find(key);
     if (found == states.end()) {
         StableFillExtrusionState state;
-        state.bucket = bucket;
         state.bufferId = nextStableFillExtrusionBufferId();
-        state.drawableId = drawableId;
-        state.localBufferVersion = localBufferVersion;
+        state.sourceBucketId = sourceBucketId;
         state.vertexRevision = vertexRevision;
         state.indexRevision = indexRevision;
+        state.vertexFingerprint = fingerprintBytes(vertexData, vertexBytes);
+        state.indexFingerprint = fingerprintBytes(indexData, indexBytes);
+        state.lastUsedLookup = lookupCount;
         const auto [inserted, _] = states.emplace(key, std::move(state));
-        return {inserted->second.bufferId, inserted->second.version};
+        trimStableFillExtrusionIdentities(states);
+        return {inserted->second.bufferId, inserted->second.vertexVersion, inserted->second.indexVersion};
     }
 
     auto& state = found->second;
-    const bool sourceChanged = state.vertexRevision != vertexRevision || state.indexRevision != indexRevision;
-    const bool localGenerationChanged =
-        state.drawableId == drawableId && state.localBufferVersion != localBufferVersion;
-    if (sourceChanged || localGenerationChanged) {
-        if (state.version == std::numeric_limits<uint32_t>::max()) {
-            state.bufferId = nextStableFillExtrusionBufferId();
-            state.version = 1;
-        } else {
-            ++state.version;
-        }
+    const bool sourceRecreated = state.sourceBucketId != sourceBucketId;
+    const bool vertexMayHaveChanged = sourceRecreated || state.vertexRevision != vertexRevision;
+    const bool indexMayHaveChanged = sourceRecreated || state.indexRevision != indexRevision;
+
+    ContentFingerprint vertexFingerprint = state.vertexFingerprint;
+    ContentFingerprint indexFingerprint = state.indexFingerprint;
+    const bool vertexChanged = vertexMayHaveChanged &&
+                               (vertexFingerprint = fingerprintBytes(vertexData, vertexBytes)) !=
+                                   state.vertexFingerprint;
+    const bool indexChanged = indexMayHaveChanged &&
+                              (indexFingerprint = fingerprintBytes(indexData, indexBytes)) != state.indexFingerprint;
+
+    const bool identityOverflow =
+        (vertexChanged && state.vertexVersion == std::numeric_limits<uint32_t>::max()) ||
+        (indexChanged && state.indexVersion == std::numeric_limits<uint32_t>::max());
+    if (identityOverflow) {
+        state.bufferId = nextStableFillExtrusionBufferId();
+        state.vertexVersion = 1;
+        state.indexVersion = 1;
+    } else {
+        if (vertexChanged) ++state.vertexVersion;
+        if (indexChanged) ++state.indexVersion;
     }
-    state.bucket = bucket;
-    state.drawableId = drawableId;
-    state.localBufferVersion = localBufferVersion;
+
+    if (vertexMayHaveChanged) state.vertexFingerprint = vertexFingerprint;
+    if (indexMayHaveChanged) state.indexFingerprint = indexFingerprint;
+    state.sourceBucketId = sourceBucketId;
     state.vertexRevision = vertexRevision;
     state.indexRevision = indexRevision;
-    return {state.bufferId, state.version};
+    state.lastUsedLookup = lookupCount;
+    return {state.bufferId, state.vertexVersion, state.indexVersion};
 }
 
 } // namespace
@@ -973,10 +1014,12 @@ void Drawable::draw(PaintParameters& parameters) const {
                     const SegmentBase* segment) {
         uint32_t exportedBufferId = bufferId;
         uint32_t exportedBufferVersion = bufferVersion;
+        uint32_t exportedIndexVersion = indexVersion;
         if (shader == ShaderType::FillExtrusion && fillExtrusionRevision) {
             const auto& bucket = getBucket();
             const auto& tileID = getTileID();
-            if (bucket && tileID) {
+            if (bucket && tileID && rawVertexStride != 0 && vc <= std::numeric_limits<std::size_t>::max() / rawVertexStride &&
+                ic <= std::numeric_limits<std::size_t>::max() / sizeof(uint16_t)) {
                 FillExtrusionIndexRevision indexRevision;
                 indexRevision.owner = indexVector.get();
                 indexRevision.data = indexBase;
@@ -994,13 +1037,16 @@ void Drawable::draw(PaintParameters& parameters) const {
                                                                    *tileID,
                                                                    layerIndex,
                                                                    segmentOrdinal,
-                                                                   getID().id(),
-                                                                   bufferVersion,
                                                                    *fillExtrusionRevision,
-                                                                   indexRevision);
+                                                                   indexRevision,
+                                                                   vp,
+                                                                   static_cast<std::size_t>(vc) * rawVertexStride,
+                                                                   ip,
+                                                                   static_cast<std::size_t>(ic) * sizeof(uint16_t));
                 if (stable.bufferId != 0) {
                     exportedBufferId = stable.bufferId;
-                    exportedBufferVersion = stable.version;
+                    exportedBufferVersion = stable.vertexVersion;
+                    exportedIndexVersion = stable.indexVersion;
                 }
             }
         }
@@ -1010,6 +1056,7 @@ void Drawable::draw(PaintParameters& parameters) const {
         cmd.subLayerIndex = getSubLayerIndex();
         cmd.bufferId = exportedBufferId;
         cmd.bufferVersion = exportedBufferVersion;
+        cmd.indexVersion = exportedIndexVersion;
         cmd.cameraDistance = cameraDistance;
         cmd.flags = extraFlags;
         cmd.stencilReference = stencilReference;
@@ -1070,6 +1117,7 @@ void Drawable::setIndexData(gfx::IndexVectorBasePtr indices, std::vector<UniqueD
     indexVector = std::move(indices);
     segments = std::move(segs);
     ++bufferVersion;
+    ++indexVersion;
 }
 
 void Drawable::setVertices(std::vector<uint8_t>&& data, std::size_t count, gfx::AttributeDataType type) {
@@ -1133,7 +1181,8 @@ void Drawable::updateVertexAttributes(gfx::VertexAttributeArrayPtr attrs,
 
     const bool attributesChanged = attributeBindingsChanged || !attributeUpdateTime ||
                                    (attrs && attrs->isModifiedAfter(*attributeUpdateTime));
-    const bool indicesChanged = indexVector != indices || vertexCount != count;
+    const bool indicesChanged = indexVector != indices;
+    const bool vertexCountChanged = vertexCount != count;
     bool segmentsChanged = segments.size() != segmentCount;
     if (!segmentsChanged) {
         for (std::size_t i = 0; i < segmentCount; ++i) {
@@ -1153,8 +1202,11 @@ void Drawable::updateVertexAttributes(gfx::VertexAttributeArrayPtr attrs,
     vertexAttributes = std::move(attrs);
     vertexCount = count;
     indexVector = std::move(indices);
-    if (attributesChanged || indicesChanged || segmentsChanged) {
+    if (attributesChanged || vertexCountChanged || segmentsChanged) {
         ++bufferVersion;
+    }
+    if (indicesChanged || segmentsChanged) {
+        ++indexVersion;
     }
     attributeUpdateTime = util::MonotonicTimer::now();
 
