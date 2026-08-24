@@ -85,13 +85,13 @@ constexpr uint32_t DepthTest = 1u << 22;
 constexpr uint32_t DepthWrite = 1u << 23;
 constexpr uint32_t FillDataDrivenMask = FillColorDataDriven | FillOpacityDataDriven;
 constexpr uint32_t FillOutlineDataDrivenMask = FillOutlineColorDataDriven | FillOutlineOpacityDataDriven;
-constexpr uint32_t CircleDataDrivenMask = FillExtrusionColorDataDriven | CircleColorDataDriven | CircleRadiusDataDriven |
-                                          CircleBlurDataDriven | CircleOpacityDataDriven | CircleStrokeColorDataDriven |
+constexpr uint32_t CircleDataDrivenMask = CircleColorDataDriven | CircleRadiusDataDriven | CircleBlurDataDriven |
+                                          CircleOpacityDataDriven | CircleStrokeColorDataDriven |
                                           CircleStrokeWidthDataDriven | CircleStrokeOpacityDataDriven;
 constexpr uint32_t LineDataDrivenMask = LineColorDataDriven | LineBlurDataDriven | LineOpacityDataDriven |
                                         LineGapWidthDataDriven | LineOffsetDataDriven | LineWidthDataDriven |
                                         LineFloorWidthDataDriven | LinePatternDataDriven;
-static_assert(CircleDataDrivenMask == 0xFF0u);
+static_assert(CircleDataDrivenMask == 0xFE0u);
 static_assert(LineDataDrivenMask == 0xFF000u);
 static_assert(FillOutlineDataDrivenMask == 0x300000u);
 static_assert((DepthTest & DepthWrite) == 0u);
