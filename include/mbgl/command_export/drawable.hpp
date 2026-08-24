@@ -3,6 +3,7 @@
 #include <mbgl/gfx/drawable.hpp>
 #include <mbgl/command_export/uniform_buffer.hpp>
 
+#include <iterator>
 #include <optional>
 
 namespace mbgl {
