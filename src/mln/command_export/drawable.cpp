@@ -11,6 +11,7 @@
 #include <mln/gfx/index_vector.hpp>
 #include <mln/gfx/vertex_attribute.hpp>
 #include <mln/gfx/vertex_vector.hpp>
+#include <mln/renderer/bucket.hpp>
 #include <mln/renderer/paint_parameters.hpp>
 #include <mln/shaders/circle_layer_ubo.hpp>
 #include <mln/shaders/fill_extrusion_layer_ubo.hpp>
@@ -25,11 +26,172 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <map>
+#include <memory>
 #include <optional>
 #include <string_view>
+#include <tuple>
 
 namespace mln {
 namespace command_export {
+
+namespace {
+
+constexpr uint32_t kStableFillExtrusionBufferIdNamespace = 0xC0000000u;
+constexpr uint32_t kStableFillExtrusionBufferIdValueMask = 0x3fffffffu;
+
+struct FillExtrusionAttributeRevision {
+    bool present = false;
+    const void* owner = nullptr;
+    const void* data = nullptr;
+    std::size_t size = 0;
+    uint32_t offset = 0;
+    uint32_t vertexOffset = 0;
+    uint32_t stride = 0;
+    gfx::AttributeDataType type = gfx::AttributeDataType::Invalid;
+    double lastModified = 0;
+
+    bool operator==(const FillExtrusionAttributeRevision&) const = default;
+};
+
+struct FillExtrusionVertexRevision {
+    const void* layoutOwner = nullptr;
+    const void* layoutData = nullptr;
+    std::size_t layoutSize = 0;
+    uint32_t layoutStride = 0;
+    uint32_t vertexCount = 0;
+    double layoutLastModified = 0;
+    bool dataDriven = false;
+    FillExtrusionAttributeRevision base;
+    FillExtrusionAttributeRevision color;
+    FillExtrusionAttributeRevision height;
+    uint32_t constantBase = 0;
+    uint32_t constantHeight = 0;
+
+    bool operator==(const FillExtrusionVertexRevision&) const = default;
+};
+
+struct FillExtrusionIndexRevision {
+    const void* owner = nullptr;
+    const void* data = nullptr;
+    uint32_t totalIndexCount = 0;
+    uint32_t vertexOffset = 0;
+    uint32_t indexOffset = 0;
+    uint32_t vertexLength = 0;
+    uint32_t indexLength = 0;
+
+    bool operator==(const FillExtrusionIndexRevision&) const = default;
+};
+
+struct StableFillExtrusionKey {
+    int64_t bucketId = 0;
+    uint8_t tileZ = 0;
+    uint32_t tileX = 0;
+    uint32_t tileY = 0;
+    uint32_t layerIndex = 0;
+    uint32_t segmentOrdinal = 0;
+
+    bool operator<(const StableFillExtrusionKey& other) const {
+        return std::tie(bucketId, tileZ, tileX, tileY, layerIndex, segmentOrdinal) <
+               std::tie(other.bucketId,
+                        other.tileZ,
+                        other.tileX,
+                        other.tileY,
+                        other.layerIndex,
+                        other.segmentOrdinal);
+    }
+};
+
+struct StableFillExtrusionState {
+    std::weak_ptr<Bucket> bucket;
+    uint32_t bufferId = 0;
+    uint32_t version = 1;
+    int64_t drawableId = 0;
+    uint32_t localBufferVersion = 0;
+    FillExtrusionVertexRevision vertexRevision;
+    FillExtrusionIndexRevision indexRevision;
+};
+
+struct StableFillExtrusionIdentity {
+    uint32_t bufferId = 0;
+    uint32_t version = 0;
+};
+
+uint32_t nextStableFillExtrusionBufferId() {
+    static std::atomic<uint32_t> nextValue{1};
+    const uint32_t value = nextValue.fetch_add(1, std::memory_order_relaxed);
+    if (value == 0 || value > kStableFillExtrusionBufferIdValueMask) {
+        return 0;
+    }
+    return kStableFillExtrusionBufferIdNamespace | value;
+}
+
+StableFillExtrusionIdentity stableFillExtrusionIdentityFor(
+    const std::shared_ptr<Bucket>& bucket,
+    const OverscaledTileID& tileID,
+    uint32_t layerIndex,
+    uint32_t segmentOrdinal,
+    int64_t drawableId,
+    uint32_t localBufferVersion,
+    const FillExtrusionVertexRevision& vertexRevision,
+    const FillExtrusionIndexRevision& indexRevision) {
+    static std::map<StableFillExtrusionKey, StableFillExtrusionState> states;
+    static uint32_t lookupCount = 0;
+
+    if ((++lookupCount & 0xffu) == 0) {
+        for (auto it = states.begin(); it != states.end();) {
+            if (it->second.bucket.expired()) {
+                it = states.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    const auto& canonical = tileID.canonical;
+    const StableFillExtrusionKey key{
+        bucket->getID().id(),
+        canonical.z,
+        canonical.x,
+        canonical.y,
+        layerIndex,
+        segmentOrdinal,
+    };
+
+    const auto found = states.find(key);
+    if (found == states.end()) {
+        StableFillExtrusionState state;
+        state.bucket = bucket;
+        state.bufferId = nextStableFillExtrusionBufferId();
+        state.drawableId = drawableId;
+        state.localBufferVersion = localBufferVersion;
+        state.vertexRevision = vertexRevision;
+        state.indexRevision = indexRevision;
+        const auto [inserted, _] = states.emplace(key, std::move(state));
+        return {inserted->second.bufferId, inserted->second.version};
+    }
+
+    auto& state = found->second;
+    const bool sourceChanged = state.vertexRevision != vertexRevision || state.indexRevision != indexRevision;
+    const bool localGenerationChanged =
+        state.drawableId == drawableId && state.localBufferVersion != localBufferVersion;
+    if (sourceChanged || localGenerationChanged) {
+        if (state.version == std::numeric_limits<uint32_t>::max()) {
+            state.bufferId = nextStableFillExtrusionBufferId();
+            state.version = 1;
+        } else {
+            ++state.version;
+        }
+    }
+    state.bucket = bucket;
+    state.drawableId = drawableId;
+    state.localBufferVersion = localBufferVersion;
+    state.vertexRevision = vertexRevision;
+    state.indexRevision = indexRevision;
+    return {state.bufferId, state.version};
+}
+
+} // namespace
 
 Drawable::Drawable(std::string name)
     : gfx::Drawable(std::move(name)) {
@@ -227,6 +389,26 @@ void Drawable::draw(PaintParameters& parameters) const {
         rawVertexCount = rawVertexBytes / rawVertexStride;
     }
 
+    std::optional<FillExtrusionVertexRevision> fillExtrusionRevision;
+    if (shader == ShaderType::FillExtrusion) {
+        FillExtrusionVertexRevision revision;
+        revision.layoutSize = rawVertexBytes;
+        revision.layoutStride = rawVertexStride;
+        revision.vertexCount = rawVertexCount;
+        if (vertexAttributes) {
+            const auto& position = vertexAttributes->get(shaders::idFillExtrusionPosVertexAttribute);
+            if (position) {
+                const auto& shared = position->getSharedRawData();
+                if (shared) {
+                    revision.layoutOwner = shared.get();
+                    revision.layoutData = shared->getRawData();
+                    revision.layoutLastModified = shared->getLastModified().count();
+                }
+            }
+        }
+        fillExtrusionRevision = revision;
+    }
+
     // Helper: get UBO data from either direct buffer or cpuCopy
     auto getUboData = [&](size_t idx) -> std::pair<const void*, size_t> {
         // Try direct UBO first
@@ -405,6 +587,28 @@ void Drawable::draw(PaintParameters& parameters) const {
                 }
                 ddVertexVersion = bufferVersion;
                 ddVertexCacheState = cacheState;
+            }
+
+            auto snapshotAttributeRevision = [](const DDAttributeCacheState& state) {
+                FillExtrusionAttributeRevision revision;
+                revision.present = state.present;
+                revision.owner = state.owner;
+                revision.data = state.data;
+                revision.size = state.size;
+                revision.offset = state.offset;
+                revision.vertexOffset = state.vertexOffset;
+                revision.stride = state.stride;
+                revision.type = state.type;
+                revision.lastModified = state.lastModified;
+                return revision;
+            };
+            if (fillExtrusionRevision) {
+                fillExtrusionRevision->dataDriven = true;
+                fillExtrusionRevision->base = snapshotAttributeRevision(cacheState.base);
+                fillExtrusionRevision->color = snapshotAttributeRevision(cacheState.color);
+                fillExtrusionRevision->height = snapshotAttributeRevision(cacheState.height);
+                fillExtrusionRevision->constantBase = baseData ? 0 : cacheState.constantBase;
+                fillExtrusionRevision->constantHeight = heightData ? 0 : cacheState.constantHeight;
             }
 
             constexpr uint32_t ddStride = 12 + 8 + 8 + 16;
@@ -758,13 +962,54 @@ void Drawable::draw(PaintParameters& parameters) const {
     const uint16_t* indexBase = indexVector->data();
     const auto totalIndexCount = static_cast<uint32_t>(indexVector->elements());
     const float cameraDistance = static_cast<float>(parameters.state.getCameraToCenterDistance());
+    const uint32_t layerIndex = getCurrentLayerIndex();
 
-    auto emit = [&](DrawModeType mode, const uint8_t* vp, uint32_t vc, const uint16_t* ip, uint32_t ic) {
+    auto emit = [&](DrawModeType mode,
+                    const uint8_t* vp,
+                    uint32_t vc,
+                    const uint16_t* ip,
+                    uint32_t ic,
+                    uint32_t segmentOrdinal,
+                    const SegmentBase* segment) {
+        uint32_t exportedBufferId = bufferId;
+        uint32_t exportedBufferVersion = bufferVersion;
+        if (shader == ShaderType::FillExtrusion && fillExtrusionRevision) {
+            const auto& bucket = getBucket();
+            const auto& tileID = getTileID();
+            if (bucket && tileID) {
+                FillExtrusionIndexRevision indexRevision;
+                indexRevision.owner = indexVector.get();
+                indexRevision.data = indexBase;
+                indexRevision.totalIndexCount = totalIndexCount;
+                if (segment) {
+                    indexRevision.vertexOffset = static_cast<uint32_t>(segment->vertexOffset);
+                    indexRevision.indexOffset = static_cast<uint32_t>(segment->indexOffset);
+                    indexRevision.vertexLength = static_cast<uint32_t>(segment->vertexLength);
+                    indexRevision.indexLength = static_cast<uint32_t>(segment->indexLength);
+                } else {
+                    indexRevision.vertexLength = rawVertexCount;
+                    indexRevision.indexLength = totalIndexCount;
+                }
+                const auto stable = stableFillExtrusionIdentityFor(bucket,
+                                                                   *tileID,
+                                                                   layerIndex,
+                                                                   segmentOrdinal,
+                                                                   getID().id(),
+                                                                   bufferVersion,
+                                                                   *fillExtrusionRevision,
+                                                                   indexRevision);
+                if (stable.bufferId != 0) {
+                    exportedBufferId = stable.bufferId;
+                    exportedBufferVersion = stable.version;
+                }
+            }
+        }
+
         auto& cmd = frame.addCommand(shader, mode, vp, rawVertexStride, vc, ip, ic);
-        cmd.layerIndex = getCurrentLayerIndex();
+        cmd.layerIndex = layerIndex;
         cmd.subLayerIndex = getSubLayerIndex();
-        cmd.bufferId = bufferId;
-        cmd.bufferVersion = bufferVersion;
+        cmd.bufferId = exportedBufferId;
+        cmd.bufferVersion = exportedBufferVersion;
         cmd.cameraDistance = cameraDistance;
         cmd.flags = extraFlags;
         cmd.stencilReference = stencilReference;
@@ -795,12 +1040,13 @@ void Drawable::draw(PaintParameters& parameters) const {
     };
 
     if (segments.empty()) {
-        emit(DrawModeType::Triangles, vertexBase, rawVertexCount, indexBase, totalIndexCount);
+        emit(DrawModeType::Triangles, vertexBase, rawVertexCount, indexBase, totalIndexCount, 0, nullptr);
     } else {
         // One command per segment. Indices are relative to the segment's
         // vertexOffset (kept < 65536 that way), so offset the vertex pointer
         // instead because the command ABI has no baseVertex field.
-        for (const auto& seg : segments) {
+        for (std::size_t segmentOrdinal = 0; segmentOrdinal < segments.size(); ++segmentOrdinal) {
+            const auto& seg = segments[segmentOrdinal];
             const auto& s = seg->getSegment();
             if (s.indexLength == 0) continue;
             if (s.indexOffset + s.indexLength > totalIndexCount) continue;
@@ -813,7 +1059,9 @@ void Drawable::draw(PaintParameters& parameters) const {
                  vertexBase + s.vertexOffset * rawVertexStride,
                  vc,
                  indexBase + s.indexOffset,
-                 static_cast<uint32_t>(s.indexLength));
+                 static_cast<uint32_t>(s.indexLength),
+                 static_cast<uint32_t>(segmentOrdinal),
+                 &s);
         }
     }
 }
