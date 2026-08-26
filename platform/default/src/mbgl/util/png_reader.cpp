@@ -4,36 +4,10 @@
 #include <mbgl/util/logging.hpp>
 
 #include <istream>
-#include <sstream>
 
 extern "C" {
 #include <png.h>
 }
-
-namespace {
-template <size_t max, typename... Args>
-std::string sprintf(const char* msg, Args... args) {
-    char res[max];
-    int len = snprintf(res, sizeof(res), msg, args...);
-    return std::string(res, len);
-}
-} // namespace
-
-const static bool png_version_check [[maybe_unused]] = []() {
-    const png_uint_32 version = png_access_version_number();
-    if (version != PNG_LIBPNG_VER) {
-        throw std::runtime_error(
-            sprintf<96>("libpng version mismatch: headers report %d.%d.%d, but library "
-                        "reports %d.%d.%d",
-                        PNG_LIBPNG_VER / 10000,
-                        (PNG_LIBPNG_VER / 100) % 100,
-                        PNG_LIBPNG_VER % 100,
-                        version / 10000,
-                        (version / 100) % 100,
-                        version % 100));
-    }
-    return true;
-}();
 
 namespace mbgl {
 
