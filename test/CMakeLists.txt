@@ -24,6 +24,7 @@ add_library(
     ${PROJECT_SOURCE_DIR}/test/renderer/renderable.test.cpp
     ${PROJECT_SOURCE_DIR}/test/renderer/shader_registry.test.cpp
     $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/circle_vertex_data.test.cpp>
+    $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/drawable.test.cpp>
     $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/fill_extrusion_vertex_data.test.cpp>
     $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/fill_vertex_data.test.cpp>
     $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/line_vertex_data.test.cpp>

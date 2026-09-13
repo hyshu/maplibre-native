@@ -1111,7 +1111,7 @@ void Drawable::updateVertexAttributes(gfx::VertexAttributeArrayPtr attrs,
                                       std::size_t segmentCount) {
     bool attributeBindingsChanged = static_cast<bool>(vertexAttributes) != static_cast<bool>(attrs);
     if (!attributeBindingsChanged && vertexAttributes && attrs) {
-        for (std::size_t id = 0; id < shaders::maxVertexAttributeCountPerShader; ++id) {
+        for (std::size_t id = 0; id < shaders::maxAttributeCountPerShader; ++id) {
             const auto& previous = vertexAttributes->get(id);
             const auto& next = attrs->get(id);
             if (static_cast<bool>(previous) != static_cast<bool>(next)) {
@@ -1143,6 +1143,7 @@ void Drawable::updateVertexAttributes(gfx::VertexAttributeArrayPtr attrs,
             if (previousMode.type != mode.type || previousMode.size != mode.size ||
                 previous.vertexOffset != next.vertexOffset || previous.indexOffset != next.indexOffset ||
                 previous.vertexLength != next.vertexLength || previous.indexLength != next.indexLength ||
+                previous.baseInstance != next.baseInstance || previous.instanceCount != next.instanceCount ||
                 previous.sortKey != next.sortKey) {
                 segmentsChanged = true;
                 break;
@@ -1164,7 +1165,14 @@ void Drawable::updateVertexAttributes(gfx::VertexAttributeArrayPtr attrs,
         for (std::size_t i = 0; i < segmentCount; ++i) {
             const auto& s = segs[i];
             drawSegs.push_back(std::make_unique<gfx::Drawable::DrawSegment>(
-                mode, SegmentBase{s.vertexOffset, s.indexOffset, s.vertexLength, s.indexLength, s.sortKey}));
+                mode,
+                SegmentBase{s.vertexOffset,
+                            s.indexOffset,
+                            s.vertexLength,
+                            s.indexLength,
+                            s.baseInstance,
+                            s.instanceCount,
+                            s.sortKey}));
         }
         segments = std::move(drawSegs);
     }
