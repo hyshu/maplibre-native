@@ -74,8 +74,8 @@ gfx::DynamicTexturePtr Context::createDynamicTexture(Size size, gfx::TexturePixe
 }
 
 RenderTargetPtr Context::createRenderTarget(const Size size, const gfx::TextureChannelDataType type) {
-    // The consumer supports floating point heatmap density targets.
-    if (type != gfx::TextureChannelDataType::HalfFloat) {
+    // The consumer supports floating point density and RGBA8 derivative targets.
+    if (type != gfx::TextureChannelDataType::HalfFloat && type != gfx::TextureChannelDataType::UnsignedByte) {
         return nullptr;
     }
     return std::make_shared<mln::RenderTarget>(*this, size, type);

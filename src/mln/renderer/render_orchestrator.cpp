@@ -1009,7 +1009,8 @@ void RenderOrchestrator::processChanges() {
     }
 }
 
-bool RenderOrchestrator::addRenderTarget(RenderTargetPtr renderTarget) {
+bool RenderOrchestrator::addRenderTarget(RenderTargetPtr renderTarget, util::SimpleIdentity owner) {
+    renderTargetOwners[renderTarget].insert(owner);
     auto it = std::ranges::find(renderTargets, renderTarget);
     if (it == renderTargets.end()) {
         renderTargets.emplace_back(renderTarget);
@@ -1019,7 +1020,12 @@ bool RenderOrchestrator::addRenderTarget(RenderTargetPtr renderTarget) {
     }
 }
 
-bool RenderOrchestrator::removeRenderTarget(const RenderTargetPtr& renderTarget) {
+bool RenderOrchestrator::removeRenderTarget(const RenderTargetPtr& renderTarget, util::SimpleIdentity owner) {
+    const auto owners = renderTargetOwners.find(renderTarget);
+    if (owners == renderTargetOwners.end() || !owners->second.erase(owner) || !owners->second.empty()) {
+        return false;
+    }
+    renderTargetOwners.erase(owners);
     auto it = std::ranges::find(renderTargets, renderTarget);
     if (it != renderTargets.end()) {
         renderTargets.erase(it);

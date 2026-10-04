@@ -21,6 +21,8 @@
 #include <mln/shaders/line_layer_ubo.hpp>
 #include <mln/shaders/heatmap_layer_ubo.hpp>
 #include <mln/shaders/heatmap_texture_layer_ubo.hpp>
+#include <mln/shaders/hillshade_layer_ubo.hpp>
+#include <mln/shaders/hillshade_prepare_layer_ubo.hpp>
 #include <mln/shaders/shader_defines.hpp>
 #include <mln/shaders/shader_program_base.hpp>
 #include <mln/util/logging.hpp>
@@ -222,6 +224,8 @@ static constexpr ShaderType shaderTypeFromProgramName(const std::string_view nam
     if (name == "BackgroundPatternShader") return ShaderType::BackgroundPattern;
     if (name == "HeatmapShader") return ShaderType::Heatmap;
     if (name == "HeatmapTextureShader") return ShaderType::HeatmapTexture;
+    if (name == "HillshadePrepareShader") return ShaderType::HillshadePrepare;
+    if (name == "HillshadeShader") return ShaderType::Hillshade;
 
     // Patterned fills/extrusions and the remaining built-in shaders need
     // distinct consumer pipelines. Do not misrender them as their untextured
@@ -235,6 +239,11 @@ static_assert(shaderTypeFromProgramName("FillOutlineTriangulatedShader") == Shad
 static_assert(shaderTypeFromProgramName("BackgroundPatternShader") == ShaderType::BackgroundPattern);
 static_assert(shaderTypeFromProgramName("HeatmapShader") == ShaderType::Heatmap);
 static_assert(shaderTypeFromProgramName("HeatmapTextureShader") == ShaderType::HeatmapTexture);
+static_assert(shaderTypeFromProgramName("HillshadePrepareShader") == ShaderType::HillshadePrepare);
+static_assert(shaderTypeFromProgramName("HillshadeShader") == ShaderType::Hillshade);
+static_assert(sizeof(shaders::HillshadeEvaluatedPropsUBO) == sizeof(DrawCommand::propsUBO));
+static_assert(sizeof(shaders::HillshadeTilePropsUBO) == 32);
+static_assert(sizeof(shaders::HillshadePrepareTilePropsUBO) == 32);
 static_assert(offsetof(shaders::HeatmapEvaluatedPropsUBO, padding) == 12);
 static_assert(shaders::idHeatmapRadiusVertexAttribute == shaders::idHeatmapWeightVertexAttribute + 1);
 static_assert(shaderTypeFromProgramName("FillExtrusionPatternShader") == ShaderType::Unknown);
@@ -319,6 +328,8 @@ static constexpr uint32_t vertexStrideForShader(ShaderType shader) {
         case ShaderType::HeatmapTexture:
             return 4; // short2 = 4 bytes (pos*2 + extrude bit encoding)
         case ShaderType::Raster:
+        case ShaderType::HillshadePrepare:
+        case ShaderType::Hillshade:
             return 8; // short2 pos + short2 texture_pos (RasterLayoutVertex)
         case ShaderType::FillExtrusion:
             return 12; // short2 + short4 = 12 bytes (pos + normal_ed)
@@ -441,7 +452,8 @@ void Drawable::draw(PaintParameters& parameters) const {
         getUboData(shader == ShaderType::HeatmapTexture ? shaders::idHeatmapTexturePropsUBO : 2);
     // Tile-props UBO (index 3 = idDrawableReservedFragmentOnlyUBO):
     // LineSDFTilePropsUBO / LinePatternTilePropsUBO
-    const auto [tilePropsUboData, tilePropsUboSize] = getUboData(3);
+    const auto [tilePropsUboData, tilePropsUboSize] =
+        getUboData(shader == ShaderType::HillshadePrepare ? shaders::idHillshadePrepareTilePropsUBO : 3);
     // Props UBO — index depends on the layer type (see shader_defines.hpp).
     // A fixed index (not a search) matters: FillExtrusion also has a 48-byte
     // TilePropsUBO at index 4 that a {4,5} scan would pick up by mistake.
@@ -459,7 +471,10 @@ void Drawable::draw(PaintParameters& parameters) const {
                 return static_cast<size_t>(shaders::idCircleEvaluatedPropsUBO); // 4
             case ShaderType::Heatmap:
                 return static_cast<size_t>(shaders::idHeatmapEvaluatedPropsUBO);
+            case ShaderType::Hillshade:
+                return static_cast<size_t>(shaders::idHillshadeEvaluatedPropsUBO);
             case ShaderType::HeatmapTexture:
+            case ShaderType::HillshadePrepare:
                 return std::numeric_limits<size_t>::max();
             case ShaderType::Raster:
                 return static_cast<size_t>(shaders::idRasterEvaluatedPropsUBO); // 4
@@ -1038,6 +1053,8 @@ void Drawable::draw(PaintParameters& parameters) const {
     } else if (shader == ShaderType::Raster) {
         // Image0 and image1 are the same bucket texture on this path
         texSlot = shaders::idRasterImage0Texture;
+    } else if (shader == ShaderType::HillshadePrepare) {
+        texSlot = shaders::idHillshadeImageTexture;
     } else if (shader == ShaderType::HeatmapTexture) {
         texSlot = shaders::idHeatmapColorRampTexture;
     }
@@ -1056,13 +1073,16 @@ void Drawable::draw(PaintParameters& parameters) const {
     }
 
     const Texture2D* renderTarget = nullptr;
-    if (shader == ShaderType::Heatmap) {
+    if (shader == ShaderType::Heatmap || shader == ShaderType::HillshadePrepare) {
         const auto& pass = static_cast<const command_export::RenderPass&>(*parameters.renderPass);
         renderTarget = pass.getTarget().get();
+    } else if (shader == ShaderType::Hillshade) {
+        renderTarget = static_cast<const Texture2D*>(getTexture(shaders::idHillshadeImageTexture).get());
     } else if (shader == ShaderType::HeatmapTexture) {
         renderTarget = static_cast<const Texture2D*>(getTexture(shaders::idHeatmapImageTexture).get());
     }
-    if ((shader == ShaderType::Heatmap || shader == ShaderType::HeatmapTexture) && !renderTarget) {
+    if ((shader == ShaderType::Heatmap || shader == ShaderType::HeatmapTexture ||
+         shader == ShaderType::HillshadePrepare || shader == ShaderType::Hillshade) && !renderTarget) {
         return;
     }
 

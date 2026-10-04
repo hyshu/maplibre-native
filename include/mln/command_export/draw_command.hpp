@@ -28,6 +28,8 @@ enum class ShaderType : uint32_t {
     Heatmap = 13,
     HeatmapTexture = 14,
     RenderTarget = 15,
+    HillshadePrepare = 16,
+    Hillshade = 17,
     // Future: Symbol, ...
     Unknown = 255
 };
@@ -88,6 +90,7 @@ constexpr uint32_t DepthTest = 1u << 22;
 constexpr uint32_t DepthWrite = 1u << 23;
 constexpr uint32_t HeatmapWeightDataDriven = 1u << 26;
 constexpr uint32_t HeatmapRadiusDataDriven = 1u << 27;
+constexpr uint32_t RenderTargetRGBA8 = 1u << 28;
 constexpr uint32_t HeatmapDataDrivenMask = HeatmapWeightDataDriven | HeatmapRadiusDataDriven;
 constexpr uint32_t FillDataDrivenMask = FillColorDataDriven | FillOpacityDataDriven;
 constexpr uint32_t FillOutlineDataDrivenMask = FillOutlineColorDataDriven | FillOutlineOpacityDataDriven;
@@ -127,64 +130,64 @@ struct DrawCommand {
     uint8_t drawableUBO[128]; // 40: per-drawable UBO (matrix, etc.)
     uint32_t drawableUBOSize; // 168
 
-    // 96 bytes: FillExtrusionPropsUBO (80) is the largest exported props UBO
-    uint8_t propsUBO[96];  // 172: evaluated properties UBO (color, opacity, etc.)
-    uint32_t propsUBOSize; // 268
+    // Hillshade carries four illumination sources in its evaluated properties.
+    uint8_t propsUBO[176];  // 172: evaluated properties UBO (color, opacity, etc.)
+    uint32_t propsUBOSize; // 348
 
-    uint32_t layerIndex; // 272: layer index for cross-tile batching
+    uint32_t layerIndex; // 352: layer index for cross-tile batching
 
     // Buffer identity for consumer-side GPU buffer caching. Raw pointers are
     // unsafe as cache keys: freed tile memory can be reallocated at the same
     // address for different data. bufferId is unique per drawable (never
     // reused); bufferVersion bumps when the drawable's buffers are replaced.
-    uint32_t bufferId;      // 276
-    uint32_t bufferVersion; // 280
+    uint32_t bufferId;      // 356
+    uint32_t bufferVersion; // 360
 
     // Texture export (dash atlas, gradient ramp, pattern atlas).
     // texData points at the command_export::Texture2D CPU pixels — stable while
     // the texture object is alive. Consumers can cache GPU textures by
     // (texId, texVersion).
-    uint32_t texChannels; // 284: 0 = no texture, 1 = alpha8, 4 = rgba8
-    const void* texData;  // 288
-    uint32_t texWidth;    // 296
-    uint32_t texHeight;   // 300
-    uint32_t texId;       // 304: unique per Texture2D instance
-    uint32_t texVersion;  // 308: bumped on every (re)upload
+    uint32_t texChannels; // 364: 0 = no texture, 1 = alpha8, 4 = rgba8
+    const void* texData;  // 368
+    uint32_t texWidth;    // 376
+    uint32_t texHeight;   // 380
+    uint32_t texId;       // 384: unique per Texture2D instance
+    uint32_t texVersion;  // 388: bumped on every (re)upload
 
     // Per-tile fragment UBO (LineSDFTilePropsUBO / LinePatternTilePropsUBO)
-    uint8_t tilePropsUBO[64];  // 312
-    uint32_t tilePropsUBOSize; // 376
+    uint8_t tilePropsUBO[64];  // 392
+    uint32_t tilePropsUBOSize; // 456
 
     // Camera-to-center distance in pixels (TransformState). Needed by the
     // circle shader for scale-with-map / pitch-with-map sizing.
-    float cameraDistance; // 380
+    float cameraDistance; // 460
 
-    // Sampler filter configured on the exported Texture2D. Kept at the end
-    // so adding it does not shift any existing field offsets.
-    TextureFilterType texFilter; // 384
+    // Sampler filter configured on the exported Texture2D.
+    TextureFilterType texFilter; // 464
 
-    // Native drawable ordering within a style layer. This occupies the
-    // struct's former tail padding, preserving the 392-byte FFI ABI size.
-    int32_t subLayerIndex; // 388
+    // Native drawable ordering within a style layer.
+    int32_t subLayerIndex; // 468
 
-    // Resolved stencil state. Tail fields intentionally preserve every
-    // existing offset while extending the FFI ABI from 392 to 400 bytes.
-    uint32_t stencilReference;   // 392
-    StencilModeType stencilMode; // 396
+    // Resolved stencil state.
+    uint32_t stencilReference;   // 472
+    StencilModeType stencilMode; // 476
 
-    // Offscreen texture identity and logical dimensions. Heatmap commands
-    // write this target and HeatmapTexture commands sample it. RenderTarget
-    // commands clear it before any draws. Zero identifies the main framebuffer.
-    uint32_t renderTargetId;     // 400
-    uint32_t renderTargetWidth;  // 404
-    uint32_t renderTargetHeight; // 408
+    // Offscreen texture identity and logical dimensions. Heatmap and
+    // HillshadePrepare write this target, while HeatmapTexture and Hillshade
+    // sample it. RenderTarget clears it before draws. RenderTargetRGBA8
+    // selects RGBA8 storage instead of RGBA16Float. Zero denotes the main target.
+    uint32_t renderTargetId;     // 480
+    uint32_t renderTargetWidth;  // 484
+    uint32_t renderTargetHeight; // 488
 };
-static_assert(sizeof(DrawCommand) == 416, "DrawCommand size must be stable for FFI");
+static_assert(sizeof(DrawCommand) == 496, "DrawCommand size must be stable for FFI");
 static_assert(static_cast<uint32_t>(ShaderType::ClippingMask) == 11);
 static_assert(static_cast<uint32_t>(ShaderType::BackgroundPattern) == 12);
 static_assert(static_cast<uint32_t>(ShaderType::Heatmap) == 13);
 static_assert(static_cast<uint32_t>(ShaderType::HeatmapTexture) == 14);
 static_assert(static_cast<uint32_t>(ShaderType::RenderTarget) == 15);
+static_assert(static_cast<uint32_t>(ShaderType::HillshadePrepare) == 16);
+static_assert(static_cast<uint32_t>(ShaderType::Hillshade) == 17);
 static_assert(static_cast<uint32_t>(TextureFilterType::Nearest) == 0);
 static_assert(static_cast<uint32_t>(TextureFilterType::Linear) == 1);
 static_assert(static_cast<uint32_t>(StencilModeType::Disabled) == 0);
@@ -211,26 +214,26 @@ COMMAND_EXPORT_ABI_OFFSET(DrawCommand, flags, 36);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, drawableUBO, 40);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, drawableUBOSize, 168);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, propsUBO, 172);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, propsUBOSize, 268);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, layerIndex, 272);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, bufferId, 276);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, bufferVersion, 280);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texChannels, 284);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texData, 288);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texWidth, 296);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texHeight, 300);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texId, 304);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texVersion, 308);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, tilePropsUBO, 312);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, tilePropsUBOSize, 376);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, cameraDistance, 380);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texFilter, 384);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, subLayerIndex, 388);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, stencilReference, 392);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, stencilMode, 396);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetId, 400);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetWidth, 404);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetHeight, 408);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, propsUBOSize, 348);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, layerIndex, 352);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, bufferId, 356);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, bufferVersion, 360);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texChannels, 364);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texData, 368);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texWidth, 376);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texHeight, 380);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texId, 384);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texVersion, 388);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, tilePropsUBO, 392);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, tilePropsUBOSize, 456);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, cameraDistance, 460);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texFilter, 464);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, subLayerIndex, 468);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, stencilReference, 472);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, stencilMode, 476);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetId, 480);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetWidth, 484);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetHeight, 488);
 
 /// Per-frame data accumulated during render and read by an external consumer.
 struct FrameData {

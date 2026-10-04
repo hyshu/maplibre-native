@@ -47,9 +47,7 @@ IlluminationProperties getIlluminationProperties(const HillshadePaintProperties:
     // Pad shorter arrays by repeating the last element
     auto padArray = [maxLength](auto& arr) {
         if (arr.empty()) arr.push_back(typename std::decay<decltype(arr)>::type::value_type{});
-        while (arr.size() < maxLength) {
-            arr.push_back(arr.back());
-        }
+        arr.resize(maxLength, arr.back());
     };
 
     padArray(directions);
@@ -119,9 +117,8 @@ int32_t methodToInt(HillshadeMethodType method) {
 
 // Calculate latitude range for tile
 std::array<float, 2> getLatRange(const UnwrappedTileID& id) {
-    const LatLng latlng0 = LatLng(id);
-    const LatLng latlng1 = LatLng(UnwrappedTileID(id.canonical.z, id.canonical.x, id.canonical.y + 1));
-    return {{static_cast<float>(latlng0.latitude()), static_cast<float>(latlng1.latitude())}};
+    const LatLngBounds bounds(id.canonical);
+    return {{static_cast<float>(bounds.north()), static_cast<float>(bounds.south())}};
 }
 
 } // namespace
@@ -142,14 +139,16 @@ void HillshadeLayerTweaker::execute(LayerGroupBase& layerGroup, const PaintParam
     auto illumination = getIlluminationProperties(evaluated);
 
     // Adjust azimuths if anchor is viewport
-    if (evaluated.get<HillshadeIlluminationAnchor>() == HillshadeIlluminationAnchorType::Viewport) {
+    const bool viewportAnchor = evaluated.get<HillshadeIlluminationAnchor>() == HillshadeIlluminationAnchorType::Viewport;
+    if (viewportAnchor) {
         float bearing = static_cast<float>(parameters.state.getBearing());
         for (auto& azimuth : illumination.directionRadians) {
             azimuth -= bearing;
         }
     }
 
-    if (!evaluatedPropsUniformBuffer || propertiesUpdated) {
+    // Viewport illumination changes when the camera rotates without a paint update.
+    if (!evaluatedPropsUniformBuffer || propertiesUpdated || viewportAnchor) {
         const HillshadeEvaluatedPropsUBO evaluatedPropsUBO = packEvaluatedProps(illumination,
                                                                                 evaluated.get<HillshadeAccentColor>());
 

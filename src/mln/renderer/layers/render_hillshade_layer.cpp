@@ -48,9 +48,8 @@ RenderHillshadeLayer::RenderHillshadeLayer(Immutable<style::HillshadeLayer::Impl
 RenderHillshadeLayer::~RenderHillshadeLayer() = default;
 
 std::array<float, 2> RenderHillshadeLayer::getLatRange(const UnwrappedTileID& id) {
-    const LatLng latlng0 = LatLng(id);
-    const LatLng latlng1 = LatLng(UnwrappedTileID(id.canonical.z, id.canonical.x, id.canonical.y + 1));
-    return {{static_cast<float>(latlng0.latitude()), static_cast<float>(latlng1.latitude())}};
+    const LatLngBounds bounds(id.canonical);
+    return {{static_cast<float>(bounds.north()), static_cast<float>(bounds.south())}};
 }
 
 // Keep old function for backward compatibility during transition
@@ -112,23 +111,11 @@ void RenderHillshadeLayer::prepare(const LayerPrepareParameters& params) {
     updateRenderTileIDs();
 }
 
-namespace {
-void activateRenderTarget(const RenderTargetPtr& renderTarget_, bool activate, UniqueChangeRequestVec& changes) {
-    if (renderTarget_) {
-        if (activate) {
-            // The RenderTree has determined this render target should be included in the renderable set for a frame
-            changes.emplace_back(std::make_unique<AddRenderTargetRequest>(renderTarget_));
-        } else {
-            // The RenderTree is informing us we should not render anything
-            changes.emplace_back(std::make_unique<RemoveRenderTargetRequest>(renderTarget_));
-        }
-    }
-}
-} // namespace
-
 void RenderHillshadeLayer::markLayerRenderable(bool willRender, UniqueChangeRequestVec& changes) {
     RenderLayer::markLayerRenderable(willRender, changes);
-    removeRenderTargets(changes);
+    if (!willRender) {
+        removeRenderTargets(changes);
+    }
 }
 
 void RenderHillshadeLayer::layerRemoved(UniqueChangeRequestVec& changes) {
@@ -136,16 +123,22 @@ void RenderHillshadeLayer::layerRemoved(UniqueChangeRequestVec& changes) {
     removeRenderTargets(changes);
 }
 
-void RenderHillshadeLayer::addRenderTarget(const RenderTargetPtr& renderTarget, UniqueChangeRequestVec& changes) {
-    activateRenderTarget(renderTarget, true, changes);
-    activatedRenderTargets.emplace_back(renderTarget);
+void RenderHillshadeLayer::updateRenderTargets(std::vector<RenderTargetPtr> targets, UniqueChangeRequestVec& changes) {
+    for (const auto& target : activatedRenderTargets) {
+        if (std::ranges::find(targets, target) == targets.end()) {
+            changes.emplace_back(std::make_unique<RemoveRenderTargetRequest>(target, renderTargetOwner));
+        }
+    }
+    for (const auto& target : targets) {
+        if (std::ranges::find(activatedRenderTargets, target) == activatedRenderTargets.end()) {
+            changes.emplace_back(std::make_unique<AddRenderTargetRequest>(target, renderTargetOwner));
+        }
+    }
+    activatedRenderTargets = std::move(targets);
 }
 
 void RenderHillshadeLayer::removeRenderTargets(UniqueChangeRequestVec& changes) {
-    for (const auto& renderTarget : activatedRenderTargets) {
-        activateRenderTarget(renderTarget, false, changes);
-    }
-    activatedRenderTargets.clear();
+    updateRenderTargets({}, changes);
 }
 
 static const std::string HillshadePrepareShaderGroupName = "HillshadePrepareShader";
@@ -158,8 +151,9 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
                                   [[maybe_unused]] const PaintParameters& paintParameters,
                                   [[maybe_unused]] const RenderTree& renderTree,
                                   UniqueChangeRequestVec& changes) {
-    if (!renderTiles || renderTiles->empty()) {
+    if (!renderTiles || renderTiles->empty() || evaluatedProperties->renderPasses == 0) {
         removeAllDrawables();
+        removeRenderTargets(changes);
         return;
     }
 
@@ -189,13 +183,11 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
 
     if (!hillshadePrepareShader || !hillshadeShader) {
         removeAllDrawables();
+        removeRenderTargets(changes);
         return;
     }
 
     auto renderPass = RenderPass::Translucent;
-    if (!(mln::underlying_type(renderPass) & evaluatedProperties->renderPasses)) {
-        return;
-    }
 
     stats.drawablesRemoved += tileLayerGroup->removeDrawablesIf(
         [&](gfx::Drawable& drawable) { return drawable.getTileID() && !hasRenderTile(*drawable.getTileID()); });
@@ -232,6 +224,7 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
         return hillshadePrepareVertexAttrs;
     };
 
+    std::vector<RenderTargetPtr> targets;
     for (const RenderTile& tile : *renderTiles) {
         const auto& tileID = tile.getOverscaledTileID();
 
@@ -258,13 +251,10 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
             if (!renderTarget) {
                 continue;
             }
-            bucket.renderTarget = renderTarget;
-            bucket.renderTargetPrepared = true;
-            addRenderTarget(renderTarget, changes);
-
             auto singleTileLayerGroup = context.createTileLayerGroup(0, /*initialCapacity=*/1, getID());
             if (!singleTileLayerGroup) {
-                return;
+                removeTile(renderPass, tileID);
+                continue;
             }
             renderTarget->addLayerGroup(singleTileLayerGroup, /*replace=*/true);
 
@@ -275,7 +265,7 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
 
             hillshadePrepareBuilder = context.createDrawableBuilder("hillshadePrepare");
             hillshadePrepareBuilder->setShader(hillshadePrepareShader);
-            hillshadePrepareBuilder->setDepthType(gfx::DepthMaskType::ReadOnly);
+            hillshadePrepareBuilder->setEnableDepth(false);
             hillshadePrepareBuilder->setColorMode(gfx::ColorMode::unblended());
             hillshadePrepareBuilder->setCullFaceMode(gfx::CullFaceMode::disabled());
             hillshadePrepareBuilder->setRenderPass(renderPass);
@@ -287,7 +277,7 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
 
             std::shared_ptr<gfx::Texture2D> texture = context.createTexture2D();
             texture->setImage(bucket.getDEMData().getImagePtr());
-            // Use Nearest filtering to match GL JS behavior - the Sobel kernel samples exact pixel values
+            // The Sobel kernel samples exact DEM pixel values.
             texture->setSamplerConfiguration({.filter = gfx::TextureFilterType::Nearest,
                                               .wrapU = gfx::TextureWrapType::Clamp,
                                               .wrapV = gfx::TextureWrapType::Clamp});
@@ -303,6 +293,15 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
                 singleTileLayerGroup->addDrawable(renderPass, tileID, std::move(drawable));
                 ++stats.drawablesAdded;
             }
+            if (singleTileLayerGroup->empty()) {
+                removeTile(renderPass, tileID);
+                continue;
+            }
+            bucket.renderTarget = std::move(renderTarget);
+            bucket.renderTargetPrepared = true;
+        }
+        if (std::ranges::find(targets, bucket.renderTarget) == targets.end()) {
+            targets.push_back(bucket.renderTarget);
         }
 
         // Set up tile drawable
@@ -387,6 +386,7 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
             ++stats.drawablesAdded;
         }
     }
+    updateRenderTargets(std::move(targets), changes);
 }
 
 } // namespace mln

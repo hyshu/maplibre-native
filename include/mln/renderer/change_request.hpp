@@ -95,12 +95,13 @@ protected:
  */
 class AddRenderTargetRequest : public ChangeRequest {
 public:
-    AddRenderTargetRequest(RenderTargetPtr renderTarget_);
+    AddRenderTargetRequest(RenderTargetPtr renderTarget_, util::SimpleIdentity owner_ = util::SimpleIdentity::Empty);
 
     void execute(RenderOrchestrator &) override;
 
 protected:
     RenderTargetPtr renderTarget;
+    util::SimpleIdentity owner;
 };
 
 /**
@@ -108,12 +109,13 @@ protected:
  */
 class RemoveRenderTargetRequest : public ChangeRequest {
 public:
-    RemoveRenderTargetRequest(RenderTargetPtr renderTarget_);
+    RemoveRenderTargetRequest(RenderTargetPtr renderTarget_, util::SimpleIdentity owner_ = util::SimpleIdentity::Empty);
 
     void execute(RenderOrchestrator &) override;
 
 protected:
     RenderTargetPtr renderTarget;
+    util::SimpleIdentity owner;
 };
 
 } // namespace mln
