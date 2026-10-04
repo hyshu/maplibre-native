@@ -23,6 +23,8 @@
 #include <mln/gfx/shader_group.hpp>
 #include <mln/gfx/shader_registry.hpp>
 
+#include <algorithm>
+
 namespace mln {
 
 using namespace style;
@@ -129,6 +131,11 @@ void RenderHeatmapLayer::markLayerRenderable(bool willRender, UniqueChangeReques
     activateRenderTarget(renderTarget, willRender, changes);
 }
 
+void RenderHeatmapLayer::layerRemoved(UniqueChangeRequestVec& changes) {
+    RenderLayer::layerRemoved(changes);
+    activateRenderTarget(renderTarget, false, changes);
+}
+
 std::size_t RenderHeatmapLayer::removeTile(RenderPass renderPass, const OverscaledTileID& tileID) {
     if (auto* tileLayerGroup = static_cast<TileLayerGroup*>(renderTarget->getLayerGroup(0).get())) {
         const auto count = tileLayerGroup->removeDrawables(renderPass, tileID).size();
@@ -165,13 +172,13 @@ void RenderHeatmapLayer::update(gfx::ShaderRegistry& shaders,
                                 [[maybe_unused]] const PaintParameters& paintParameters,
                                 [[maybe_unused]] const RenderTree& renderTree,
                                 UniqueChangeRequestVec& changes) {
-    if (!renderTiles || renderTiles->empty()) {
+    if (!renderTiles || renderTiles->empty() || evaluatedProperties->renderPasses == 0) {
         removeAllDrawables();
         return;
     }
 
     const auto& viewportSize = state.getSize();
-    const auto size = Size{viewportSize.width / 2, viewportSize.height / 2};
+    const auto size = Size{std::max(1u, viewportSize.width / 2), std::max(1u, viewportSize.height / 2)};
 
     // Set up a render target
     if (!renderTarget) {

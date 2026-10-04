@@ -4,6 +4,8 @@
 #include <mln/command_export/fill_extrusion_vertex_data.hpp>
 #include <mln/command_export/fill_vertex_data.hpp>
 #include <mln/command_export/line_vertex_data.hpp>
+#include <mln/command_export/heatmap_vertex_data.hpp>
+#include <mln/command_export/render_pass.hpp>
 #include <mln/command_export/texture2d.hpp>
 #include <mln/gfx/color_mode.hpp>
 #include <mln/gfx/depth_mode.hpp>
@@ -17,6 +19,8 @@
 #include <mln/shaders/fill_extrusion_layer_ubo.hpp>
 #include <mln/shaders/fill_layer_ubo.hpp>
 #include <mln/shaders/line_layer_ubo.hpp>
+#include <mln/shaders/heatmap_layer_ubo.hpp>
+#include <mln/shaders/heatmap_texture_layer_ubo.hpp>
 #include <mln/shaders/shader_defines.hpp>
 #include <mln/shaders/shader_program_base.hpp>
 #include <mln/util/logging.hpp>
@@ -216,6 +220,8 @@ static constexpr ShaderType shaderTypeFromProgramName(const std::string_view nam
     if (name == "CircleShader") return ShaderType::Circle;
     if (name == "RasterShader") return ShaderType::Raster;
     if (name == "BackgroundPatternShader") return ShaderType::BackgroundPattern;
+    if (name == "HeatmapShader") return ShaderType::Heatmap;
+    if (name == "HeatmapTextureShader") return ShaderType::HeatmapTexture;
 
     // Patterned fills/extrusions and the remaining built-in shaders need
     // distinct consumer pipelines. Do not misrender them as their untextured
@@ -227,6 +233,10 @@ static_assert(shaderTypeFromProgramName("FillExtrusionShader") == ShaderType::Fi
 static_assert(shaderTypeFromProgramName("FillOutlineShader") == ShaderType::FillOutline);
 static_assert(shaderTypeFromProgramName("FillOutlineTriangulatedShader") == ShaderType::FillOutlineTriangulated);
 static_assert(shaderTypeFromProgramName("BackgroundPatternShader") == ShaderType::BackgroundPattern);
+static_assert(shaderTypeFromProgramName("HeatmapShader") == ShaderType::Heatmap);
+static_assert(shaderTypeFromProgramName("HeatmapTextureShader") == ShaderType::HeatmapTexture);
+static_assert(offsetof(shaders::HeatmapEvaluatedPropsUBO, padding) == 12);
+static_assert(shaders::idHeatmapRadiusVertexAttribute == shaders::idHeatmapWeightVertexAttribute + 1);
 static_assert(shaderTypeFromProgramName("FillExtrusionPatternShader") == ShaderType::Unknown);
 static_assert(shaderTypeFromProgramName("SymbolIconShader") == ShaderType::Unknown);
 static_assert(shaderTypeFromProgramName("SymbolSDFShader") == ShaderType::Unknown);
@@ -305,6 +315,8 @@ static constexpr uint32_t vertexStrideForShader(ShaderType shader) {
         case ShaderType::BackgroundPattern:
             return 4; // short2 = 4 bytes
         case ShaderType::Circle:
+        case ShaderType::Heatmap:
+        case ShaderType::HeatmapTexture:
             return 4; // short2 = 4 bytes (pos*2 + extrude bit encoding)
         case ShaderType::Raster:
             return 8; // short2 pos + short2 texture_pos (RasterLayoutVertex)
@@ -425,7 +437,8 @@ void Drawable::draw(PaintParameters& parameters) const {
 
     // Extract UBO data once — shared by all segments of this drawable.
     // Drawable UBO (index 2 = idDrawableReservedVertexOnlyUBO)
-    const auto [drawableUboData, drawableUboSize] = getUboData(2);
+    const auto [drawableUboData, drawableUboSize] =
+        getUboData(shader == ShaderType::HeatmapTexture ? shaders::idHeatmapTexturePropsUBO : 2);
     // Tile-props UBO (index 3 = idDrawableReservedFragmentOnlyUBO):
     // LineSDFTilePropsUBO / LinePatternTilePropsUBO
     const auto [tilePropsUboData, tilePropsUboSize] = getUboData(3);
@@ -444,6 +457,10 @@ void Drawable::draw(PaintParameters& parameters) const {
                 return static_cast<size_t>(shaders::idLineEvaluatedPropsUBO); // 4
             case ShaderType::Circle:
                 return static_cast<size_t>(shaders::idCircleEvaluatedPropsUBO); // 4
+            case ShaderType::Heatmap:
+                return static_cast<size_t>(shaders::idHeatmapEvaluatedPropsUBO);
+            case ShaderType::HeatmapTexture:
+                return std::numeric_limits<size_t>::max();
             case ShaderType::Raster:
                 return static_cast<size_t>(shaders::idRasterEvaluatedPropsUBO); // 4
             case ShaderType::FillExtrusion:
@@ -455,7 +472,9 @@ void Drawable::draw(PaintParameters& parameters) const {
     const void* propsUboData = nullptr;
     size_t propsUboSize = 0;
     {
-        auto [d, s] = getUboData(propsIdx);
+        auto [d, s] = propsIdx == std::numeric_limits<size_t>::max()
+                          ? std::pair<const void*, size_t>{nullptr, 0}
+                          : getUboData(propsIdx);
         if (d && s > 0 && s <= sizeof(DrawCommand::propsUBO)) {
             propsUboData = d;
             propsUboSize = s;
@@ -930,6 +949,83 @@ void Drawable::draw(PaintParameters& parameters) const {
         }
     }
 
+    if (shader == ShaderType::Heatmap && vertexAttributes) {
+        detail::HeatmapVertexAttributes attributes;
+        HeatmapDDVertexCacheState cacheState;
+        cacheState.vertexCount = rawVertexCount;
+
+        const auto readAttribute =
+            [&](size_t id, std::optional<detail::HeatmapAttributeData>& result, DDAttributeCacheState& state) {
+                const auto& attr = vertexAttributes->get(id);
+                if (!attr) {
+                    return true;
+                }
+
+                state.present = true;
+                const auto& shared = attr->getSharedRawData();
+                if (!shared) {
+                    return false;
+                }
+                const auto rawSize = shared->getRawSize();
+                const auto rawCount = shared->getRawCount();
+                if (rawSize != 0 && rawCount > std::numeric_limits<std::size_t>::max() / rawSize) {
+                    return false;
+                }
+                const auto dataSize = rawSize * rawCount;
+                const auto* data = static_cast<const uint8_t*>(shared->getRawData());
+                if (!data || dataSize == 0) {
+                    return false;
+                }
+
+                state.owner = shared.get();
+                state.data = data;
+                state.size = dataSize;
+                state.offset = attr->getSharedOffset();
+                state.vertexOffset = attr->getSharedVertexOffset();
+                state.stride = attr->getSharedStride();
+                state.type = attr->getSharedType();
+                state.lastModified = shared->getLastModified().count();
+                result = detail::HeatmapAttributeData{
+                    .data = data,
+                    .size = dataSize,
+                    .offset = state.offset,
+                    .vertexOffset = state.vertexOffset,
+                    .stride = state.stride,
+                    .type = state.type,
+                };
+                return true;
+            };
+
+        if (!readAttribute(shaders::idHeatmapWeightVertexAttribute, attributes.weight, cacheState.weight) ||
+            !readAttribute(shaders::idHeatmapRadiusVertexAttribute, attributes.radius, cacheState.radius)) {
+            return;
+        }
+
+        if (!attributes.empty()) {
+            const bool geometryDirty = heatmapDDVertexVersion != bufferVersion;
+            if (geometryDirty || !heatmapDDVertexCacheState || *heatmapDDVertexCacheState != cacheState) {
+                const auto update = detail::updateHeatmapVertexData(
+                    {static_cast<const uint8_t*>(rawVertexPtr), rawVertexBytes},
+                    rawVertexCount,
+                    attributes,
+                    heatmapDDVertexData);
+                if (update == detail::HeatmapVertexDataUpdate::Failed) {
+                    return;
+                }
+                if (!geometryDirty && update == detail::HeatmapVertexDataUpdate::Changed) {
+                    ++bufferVersion;
+                }
+                heatmapDDVertexVersion = bufferVersion;
+                heatmapDDVertexCacheState = cacheState;
+            }
+
+            rawVertexPtr = heatmapDDVertexData.data();
+            rawVertexStride = 20;
+            if (attributes.weight) extraFlags |= DrawCommandFlags::HeatmapWeightDataDriven;
+            if (attributes.radius) extraFlags |= DrawCommandFlags::HeatmapRadiusDataDriven;
+        }
+    }
+
     // Texture export (dash atlas / gradient ramp / pattern atlas / raster
     // tile). The Texture2D keeps its pixels CPU-side; materialize a pending
     // image first.
@@ -942,6 +1038,8 @@ void Drawable::draw(PaintParameters& parameters) const {
     } else if (shader == ShaderType::Raster) {
         // Image0 and image1 are the same bucket texture on this path
         texSlot = shaders::idRasterImage0Texture;
+    } else if (shader == ShaderType::HeatmapTexture) {
+        texSlot = shaders::idHeatmapColorRampTexture;
     }
     if (texSlot >= 0) {
         if (const auto& tex = getTexture(static_cast<size_t>(texSlot))) {
@@ -955,6 +1053,17 @@ void Drawable::draw(PaintParameters& parameters) const {
         }
         // These shaders can't render without their texture
         if (!exportTex) return;
+    }
+
+    const Texture2D* renderTarget = nullptr;
+    if (shader == ShaderType::Heatmap) {
+        const auto& pass = static_cast<const command_export::RenderPass&>(*parameters.renderPass);
+        renderTarget = pass.getTarget().get();
+    } else if (shader == ShaderType::HeatmapTexture) {
+        renderTarget = static_cast<const Texture2D*>(getTexture(shaders::idHeatmapImageTexture).get());
+    }
+    if ((shader == ShaderType::Heatmap || shader == ShaderType::HeatmapTexture) && !renderTarget) {
+        return;
     }
 
     auto& frame = getFrameData();
@@ -1022,6 +1131,10 @@ void Drawable::draw(PaintParameters& parameters) const {
             std::memcpy(cmd.propsUBO, propsUboData, propsUboSize);
             cmd.propsUBOSize = static_cast<uint32_t>(propsUboSize);
         }
+        if (shader == ShaderType::Heatmap && cmd.propsUBOSize == sizeof(shaders::HeatmapEvaluatedPropsUBO)) {
+            const uint32_t mask = (extraFlags & DrawCommandFlags::HeatmapDataDrivenMask) >> 26;
+            std::memcpy(cmd.propsUBO + offsetof(shaders::HeatmapEvaluatedPropsUBO, padding), &mask, sizeof(mask));
+        }
         if (tilePropsUboData && tilePropsUboSize > 0 && tilePropsUboSize <= sizeof(cmd.tilePropsUBO)) {
             std::memcpy(cmd.tilePropsUBO, tilePropsUboData, tilePropsUboSize);
             cmd.tilePropsUBOSize = static_cast<uint32_t>(tilePropsUboSize);
@@ -1036,6 +1149,11 @@ void Drawable::draw(PaintParameters& parameters) const {
             cmd.texFilter = exportTex->getSamplerFilter() == gfx::TextureFilterType::Nearest
                                 ? TextureFilterType::Nearest
                                 : TextureFilterType::Linear;
+        }
+        if (renderTarget) {
+            cmd.renderTargetId = renderTarget->getTextureId();
+            cmd.renderTargetWidth = renderTarget->getSize().width;
+            cmd.renderTargetHeight = renderTarget->getSize().height;
         }
     };
 

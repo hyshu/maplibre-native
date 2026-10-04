@@ -3,6 +3,7 @@
 #include <mln/command_export/dynamic_texture.hpp>
 #include <mln/command_export/drawable_builder.hpp>
 #include <mln/command_export/layer_group.hpp>
+#include <mln/command_export/offscreen_texture.hpp>
 #include <mln/command_export/render_pass.hpp>
 #include <mln/command_export/texture2d.hpp>
 #include <mln/command_export/tile_layer_group.hpp>
@@ -14,6 +15,7 @@
 #include <mln/gfx/color_mode.hpp>
 #include <mln/gfx/depth_mode.hpp>
 #include <mln/util/logging.hpp>
+#include <mln/renderer/render_target.hpp>
 
 namespace mln {
 namespace command_export {
@@ -71,18 +73,20 @@ gfx::DynamicTexturePtr Context::createDynamicTexture(Size size, gfx::TexturePixe
     return std::make_shared<command_export::DynamicTexture>(*this, size, pixelType);
 }
 
-RenderTargetPtr Context::createRenderTarget(const Size /*size*/, const gfx::TextureChannelDataType /*type*/) {
-    // TODO: implement when needed
-    return nullptr;
+RenderTargetPtr Context::createRenderTarget(const Size size, const gfx::TextureChannelDataType type) {
+    // The consumer supports floating point heatmap density targets.
+    if (type != gfx::TextureChannelDataType::HalfFloat) {
+        return nullptr;
+    }
+    return std::make_shared<mln::RenderTarget>(*this, size, type);
 }
 
 void Context::resetState(gfx::DepthMode, gfx::ColorMode) {}
 
 void Context::setDirtyState() {}
 
-std::unique_ptr<gfx::OffscreenTexture> Context::createOffscreenTexture(Size, gfx::TextureChannelDataType) {
-    // TODO: implement when needed
-    return nullptr;
+std::unique_ptr<gfx::OffscreenTexture> Context::createOffscreenTexture(Size size, gfx::TextureChannelDataType type) {
+    return std::make_unique<OffscreenTexture>(size, type);
 }
 
 std::unique_ptr<gfx::RenderbufferResource> Context::createRenderbufferResource(gfx::RenderbufferPixelType, Size) {

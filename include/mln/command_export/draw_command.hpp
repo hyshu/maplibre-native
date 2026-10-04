@@ -25,6 +25,9 @@ enum class ShaderType : uint32_t {
     FillOutlineTriangulated = 10, // antialiased fill outline (LineLayoutVertex; optional paint ranges)
     ClippingMask = 11,            // tile clipping quad; writes only the stencil attachment
     BackgroundPattern = 12,       // repeating/crossfaded background pattern atlas
+    Heatmap = 13,
+    HeatmapTexture = 14,
+    RenderTarget = 15,
     // Future: Symbol, ...
     Unknown = 255
 };
@@ -83,6 +86,9 @@ constexpr uint32_t FillOutlineOpacityDataDriven = 1u << 21;
 // state (rather than Drawable's requested state) preserves opaquePassCutoff.
 constexpr uint32_t DepthTest = 1u << 22;
 constexpr uint32_t DepthWrite = 1u << 23;
+constexpr uint32_t HeatmapWeightDataDriven = 1u << 26;
+constexpr uint32_t HeatmapRadiusDataDriven = 1u << 27;
+constexpr uint32_t HeatmapDataDrivenMask = HeatmapWeightDataDriven | HeatmapRadiusDataDriven;
 constexpr uint32_t FillDataDrivenMask = FillColorDataDriven | FillOpacityDataDriven;
 constexpr uint32_t FillOutlineDataDrivenMask = FillOutlineColorDataDriven | FillOutlineOpacityDataDriven;
 constexpr uint32_t CircleDataDrivenMask = CircleColorDataDriven | CircleRadiusDataDriven | CircleBlurDataDriven |
@@ -165,10 +171,20 @@ struct DrawCommand {
     // existing offset while extending the FFI ABI from 392 to 400 bytes.
     uint32_t stencilReference;   // 392
     StencilModeType stencilMode; // 396
+
+    // Offscreen texture identity and logical dimensions. Heatmap commands
+    // write this target and HeatmapTexture commands sample it. RenderTarget
+    // commands clear it before any draws. Zero identifies the main framebuffer.
+    uint32_t renderTargetId;     // 400
+    uint32_t renderTargetWidth;  // 404
+    uint32_t renderTargetHeight; // 408
 };
-static_assert(sizeof(DrawCommand) == 400, "DrawCommand size must be stable for FFI");
+static_assert(sizeof(DrawCommand) == 416, "DrawCommand size must be stable for FFI");
 static_assert(static_cast<uint32_t>(ShaderType::ClippingMask) == 11);
 static_assert(static_cast<uint32_t>(ShaderType::BackgroundPattern) == 12);
+static_assert(static_cast<uint32_t>(ShaderType::Heatmap) == 13);
+static_assert(static_cast<uint32_t>(ShaderType::HeatmapTexture) == 14);
+static_assert(static_cast<uint32_t>(ShaderType::RenderTarget) == 15);
 static_assert(static_cast<uint32_t>(TextureFilterType::Nearest) == 0);
 static_assert(static_cast<uint32_t>(TextureFilterType::Linear) == 1);
 static_assert(static_cast<uint32_t>(StencilModeType::Disabled) == 0);
@@ -212,6 +228,9 @@ COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texFilter, 384);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, subLayerIndex, 388);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, stencilReference, 392);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, stencilMode, 396);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetId, 400);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetWidth, 404);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetHeight, 408);
 
 /// Per-frame data accumulated during render and read by an external consumer.
 struct FrameData {
