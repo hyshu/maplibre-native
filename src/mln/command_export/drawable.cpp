@@ -241,7 +241,7 @@ static_assert(shaderTypeFromProgramName("HeatmapShader") == ShaderType::Heatmap)
 static_assert(shaderTypeFromProgramName("HeatmapTextureShader") == ShaderType::HeatmapTexture);
 static_assert(shaderTypeFromProgramName("HillshadePrepareShader") == ShaderType::HillshadePrepare);
 static_assert(shaderTypeFromProgramName("HillshadeShader") == ShaderType::Hillshade);
-static_assert(sizeof(shaders::HillshadeEvaluatedPropsUBO) == sizeof(DrawCommand::propsUBO));
+static_assert(sizeof(shaders::HillshadeEvaluatedPropsUBO) == 176);
 static_assert(sizeof(shaders::HillshadeTilePropsUBO) == 32);
 static_assert(sizeof(shaders::HillshadePrepareTilePropsUBO) == 32);
 static_assert(offsetof(shaders::HeatmapEvaluatedPropsUBO, padding) == 12);
@@ -490,7 +490,7 @@ void Drawable::draw(PaintParameters& parameters) const {
         auto [d, s] = propsIdx == std::numeric_limits<size_t>::max()
                           ? std::pair<const void*, size_t>{nullptr, 0}
                           : getUboData(propsIdx);
-        if (d && s > 0 && s <= sizeof(DrawCommand::propsUBO)) {
+        if (d && s > 0) {
             propsUboData = d;
             propsUboSize = s;
         }
@@ -1093,6 +1093,45 @@ void Drawable::draw(PaintParameters& parameters) const {
     const float cameraDistance = static_cast<float>(parameters.state.getCameraToCenterDistance());
     const uint32_t layerIndex = getCurrentLayerIndex();
 
+    DrawCommandPayload commandPayload;
+    if (drawableUboData && drawableUboSize > 0) {
+        commandPayload.drawableUBO = {static_cast<const uint8_t*>(drawableUboData), drawableUboSize};
+    }
+    if (propsUboData && propsUboSize > 0) {
+        commandPayload.propsUBO = {static_cast<const uint8_t*>(propsUboData), propsUboSize};
+    }
+    if (tilePropsUboData && tilePropsUboSize > 0) {
+        commandPayload.tilePropsUBO = {static_cast<const uint8_t*>(tilePropsUboData), tilePropsUboSize};
+    }
+    std::array<uint8_t, sizeof(shaders::HeatmapEvaluatedPropsUBO)> heatmapProps;
+    if (shader == ShaderType::Heatmap && propsUboSize == heatmapProps.size()) {
+        std::memcpy(heatmapProps.data(), propsUboData, heatmapProps.size());
+        const uint32_t mask = (extraFlags & DrawCommandFlags::HeatmapDataDrivenMask) >> 26;
+        std::memcpy(heatmapProps.data() + offsetof(shaders::HeatmapEvaluatedPropsUBO, padding), &mask, sizeof(mask));
+        commandPayload.propsUBO = heatmapProps;
+    }
+    if (shader == ShaderType::Circle) commandPayload.cameraDistance = cameraDistance;
+    if (stencilMode != StencilModeType::Disabled) {
+        commandPayload.stencil = CommandStencil{stencilReference, stencilMode};
+    }
+    if (exportTex) {
+        commandPayload.texture = CommandTexture{
+            .data = exportTex->getPixelData().data(),
+            .width = exportTex->getSize().width,
+            .height = exportTex->getSize().height,
+            .id = exportTex->getTextureId(),
+            .version = exportTex->getVersion(),
+            .channels = static_cast<uint32_t>(exportTex->numChannels()),
+            .filter = exportTex->getSamplerFilter() == gfx::TextureFilterType::Nearest
+                          ? TextureFilterType::Nearest
+                          : TextureFilterType::Linear};
+    }
+    if (renderTarget) {
+        commandPayload.renderTarget = CommandRenderTarget{
+            renderTarget->getTextureId(), renderTarget->getSize().width, renderTarget->getSize().height};
+    }
+    std::optional<std::pair<uint32_t, uint32_t>> payloadReference;
+
     auto emit = [&](DrawModeType mode,
                     const uint8_t* vp,
                     uint32_t vc,
@@ -1139,41 +1178,13 @@ void Drawable::draw(PaintParameters& parameters) const {
         cmd.subLayerIndex = getSubLayerIndex();
         cmd.bufferId = exportedBufferId;
         cmd.bufferVersion = exportedBufferVersion;
-        cmd.cameraDistance = cameraDistance;
         cmd.flags = extraFlags;
-        cmd.stencilReference = stencilReference;
-        cmd.stencilMode = stencilMode;
-        if (drawableUboData && drawableUboSize > 0 && drawableUboSize <= sizeof(cmd.drawableUBO)) {
-            std::memcpy(cmd.drawableUBO, drawableUboData, drawableUboSize);
-            cmd.drawableUBOSize = static_cast<uint32_t>(drawableUboSize);
-        }
-        if (propsUboData) {
-            std::memcpy(cmd.propsUBO, propsUboData, propsUboSize);
-            cmd.propsUBOSize = static_cast<uint32_t>(propsUboSize);
-        }
-        if (shader == ShaderType::Heatmap && cmd.propsUBOSize == sizeof(shaders::HeatmapEvaluatedPropsUBO)) {
-            const uint32_t mask = (extraFlags & DrawCommandFlags::HeatmapDataDrivenMask) >> 26;
-            std::memcpy(cmd.propsUBO + offsetof(shaders::HeatmapEvaluatedPropsUBO, padding), &mask, sizeof(mask));
-        }
-        if (tilePropsUboData && tilePropsUboSize > 0 && tilePropsUboSize <= sizeof(cmd.tilePropsUBO)) {
-            std::memcpy(cmd.tilePropsUBO, tilePropsUboData, tilePropsUboSize);
-            cmd.tilePropsUBOSize = static_cast<uint32_t>(tilePropsUboSize);
-        }
-        if (exportTex) {
-            cmd.texData = exportTex->getPixelData().data();
-            cmd.texWidth = exportTex->getSize().width;
-            cmd.texHeight = exportTex->getSize().height;
-            cmd.texChannels = static_cast<uint32_t>(exportTex->numChannels());
-            cmd.texId = exportTex->getTextureId();
-            cmd.texVersion = exportTex->getVersion();
-            cmd.texFilter = exportTex->getSamplerFilter() == gfx::TextureFilterType::Nearest
-                                ? TextureFilterType::Nearest
-                                : TextureFilterType::Linear;
-        }
-        if (renderTarget) {
-            cmd.renderTargetId = renderTarget->getTextureId();
-            cmd.renderTargetWidth = renderTarget->getSize().width;
-            cmd.renderTargetHeight = renderTarget->getSize().height;
+        if (!payloadReference) {
+            frame.setPayload(cmd, commandPayload);
+            payloadReference = std::make_pair(cmd.payloadOffset, cmd.payloadSize);
+        } else {
+            cmd.payloadOffset = payloadReference->first;
+            cmd.payloadSize = payloadReference->second;
         }
     };
 

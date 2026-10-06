@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace mln {
@@ -107,80 +108,27 @@ static_assert((DepthTest & DepthWrite) == 0u);
 static_assert((DepthTest | DepthWrite) == 0xC00000u);
 } // namespace DrawCommandFlags
 
-/// A single draw command, serialized by Drawable::draw() for an external renderer.
-///
-/// Vertex/index data is referenced by pointer (zero-copy).
-/// The underlying VertexVector memory is stable for the tile's lifetime.
-/// UBO data is embedded (small, changes per frame due to camera matrix).
+/// A fixed-size command header with frame-relative references to optional data.
+/// Geometry pointers retain their renderer or bridge ownership.
+/// Vertex stride, payload offset, and payload size are measured in bytes.
 struct DrawCommand {
-    ShaderType shaderType; //  0: shader/pipeline selection
-    DrawModeType drawMode; //  4: primitive topology
-
-    // Vertex data — direct pointer, no copy
-    const void* vertexData; //  8: pointer to raw vertex data (stable memory)
-    uint32_t vertexCount;   // 16: number of vertices
-    uint32_t vertexStride;  // 20: bytes per vertex
-
-    // Index data — direct pointer, no copy
-    const uint16_t* indexData; // 24: pointer to raw index data (stable memory)
-    uint32_t indexCount;       // 32: number of indices
-    uint32_t flags;            // 36: see DrawCommandFlags
-
-    // Embedded UBO data (small, changes per frame)
-    uint8_t drawableUBO[128]; // 40: per-drawable UBO (matrix, etc.)
-    uint32_t drawableUBOSize; // 168
-
-    // Hillshade carries four illumination sources in its evaluated properties.
-    uint8_t propsUBO[176];  // 172: evaluated properties UBO (color, opacity, etc.)
-    uint32_t propsUBOSize; // 348
-
-    uint32_t layerIndex; // 352: layer index for cross-tile batching
-
-    // Buffer identity for consumer-side GPU buffer caching. Raw pointers are
-    // unsafe as cache keys: freed tile memory can be reallocated at the same
-    // address for different data. bufferId is unique per drawable (never
-    // reused); bufferVersion bumps when the drawable's buffers are replaced.
-    uint32_t bufferId;      // 356
-    uint32_t bufferVersion; // 360
-
-    // Texture export (dash atlas, gradient ramp, pattern atlas).
-    // texData points at the command_export::Texture2D CPU pixels — stable while
-    // the texture object is alive. Consumers can cache GPU textures by
-    // (texId, texVersion).
-    uint32_t texChannels; // 364: 0 = no texture, 1 = alpha8, 4 = rgba8
-    const void* texData;  // 368
-    uint32_t texWidth;    // 376
-    uint32_t texHeight;   // 380
-    uint32_t texId;       // 384: unique per Texture2D instance
-    uint32_t texVersion;  // 388: bumped on every (re)upload
-
-    // Per-tile fragment UBO (LineSDFTilePropsUBO / LinePatternTilePropsUBO)
-    uint8_t tilePropsUBO[64];  // 392
-    uint32_t tilePropsUBOSize; // 456
-
-    // Camera-to-center distance in pixels (TransformState). Needed by the
-    // circle shader for scale-with-map / pitch-with-map sizing.
-    float cameraDistance; // 460
-
-    // Sampler filter configured on the exported Texture2D.
-    TextureFilterType texFilter; // 464
-
-    // Native drawable ordering within a style layer.
-    int32_t subLayerIndex; // 468
-
-    // Resolved stencil state.
-    uint32_t stencilReference;   // 472
-    StencilModeType stencilMode; // 476
-
-    // Offscreen texture identity and logical dimensions. Heatmap and
-    // HillshadePrepare write this target, while HeatmapTexture and Hillshade
-    // sample it. RenderTarget clears it before draws. RenderTargetRGBA8
-    // selects RGBA8 storage instead of RGBA16Float. Zero denotes the main target.
-    uint32_t renderTargetId;     // 480
-    uint32_t renderTargetWidth;  // 484
-    uint32_t renderTargetHeight; // 488
+    ShaderType shaderType;
+    DrawModeType drawMode;
+    const void* vertexData;
+    uint32_t vertexCount;
+    uint32_t vertexStride;
+    const uint16_t* indexData;
+    uint32_t indexCount;
+    uint32_t flags;
+    // Resource identities are independent of addresses. Versions track changed geometry.
+    uint32_t bufferId;
+    uint32_t bufferVersion;
+    uint32_t layerIndex;
+    int32_t subLayerIndex;
+    uint32_t payloadOffset;
+    uint32_t payloadSize;
 };
-static_assert(sizeof(DrawCommand) == 496, "DrawCommand size must be stable for FFI");
+static_assert(sizeof(DrawCommand) == 64, "DrawCommand size must be stable for FFI");
 static_assert(static_cast<uint32_t>(ShaderType::ClippingMask) == 11);
 static_assert(static_cast<uint32_t>(ShaderType::BackgroundPattern) == 12);
 static_assert(static_cast<uint32_t>(ShaderType::Heatmap) == 13);
@@ -196,11 +144,55 @@ static_assert(static_cast<uint32_t>(StencilModeType::ClippingTest) == 2);
 static_assert(static_cast<uint32_t>(StencilModeType::FillExtrusion) == 3);
 static_assert(static_cast<uint32_t>(StencilModeType::Clear) == 4);
 
-// ── ABI offset locks (single source of truth) ───────────────────────
-// Every field's byte offset is pinned here and verified by the compiler
-// via offsetof. Reordering or resizing a field breaks the build instead
-// of silently corrupting consumer-side reads. Binding generators can parse
-// these locks to keep their offsets synchronized with this struct.
+namespace CommandPayloadSections {
+constexpr uint16_t Texture = 1u << 0;
+constexpr uint16_t Stencil = 1u << 1;
+constexpr uint16_t RenderTarget = 1u << 2;
+constexpr uint16_t CameraDistance = 1u << 3;
+constexpr uint16_t All = Texture | Stencil | RenderTarget | CameraDistance;
+} // namespace CommandPayloadSections
+
+/// Nonempty payloads start with this header and end on an eight-byte boundary.
+/// UBOs follow in drawable, evaluated, and tile order at four-byte boundaries.
+/// Optional texture, stencil, target, and camera sections follow in that order.
+/// Textures align to eight bytes and other sections align to four bytes.
+struct CommandPayloadHeader {
+    uint16_t drawableUBOSize = 0;
+    uint16_t propsUBOSize = 0;
+    uint16_t tilePropsUBOSize = 0;
+    uint16_t sections = 0;
+};
+static_assert(sizeof(CommandPayloadHeader) == 8, "CommandPayloadHeader size must be stable for FFI");
+
+/// Texture pixels remain owned by the renderer for the frame lifetime.
+struct CommandTexture {
+    const void* data = nullptr;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t id = 0;
+    uint32_t version = 0;
+    uint32_t channels = 0;
+    TextureFilterType filter = TextureFilterType::Nearest;
+};
+static_assert(sizeof(CommandTexture) == 32, "CommandTexture size must be stable for FFI");
+
+/// Omitted stencil data means disabled stencil testing.
+struct CommandStencil {
+    uint32_t reference = 0;
+    StencilModeType mode = StencilModeType::Disabled;
+};
+static_assert(sizeof(CommandStencil) == 8, "CommandStencil size must be stable for FFI");
+
+/// Omitted target data selects the main framebuffer.
+/// RenderTargetRGBA8 on a clear command selects RGBA8 instead of RGBA16Float.
+struct CommandRenderTarget {
+    uint32_t id = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
+static_assert(sizeof(CommandRenderTarget) == 12, "CommandRenderTarget size must be stable for FFI");
+
+// The binding generator reads these compiler-verified field offsets.
 #define COMMAND_EXPORT_ABI_OFFSET(S, field, off) \
     static_assert(offsetof(S, field) == (off), #S "::" #field " ABI offset changed")
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, shaderType, 0);
@@ -211,41 +203,77 @@ COMMAND_EXPORT_ABI_OFFSET(DrawCommand, vertexStride, 20);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, indexData, 24);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, indexCount, 32);
 COMMAND_EXPORT_ABI_OFFSET(DrawCommand, flags, 36);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, drawableUBO, 40);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, drawableUBOSize, 168);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, propsUBO, 172);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, propsUBOSize, 348);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, layerIndex, 352);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, bufferId, 356);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, bufferVersion, 360);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texChannels, 364);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texData, 368);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texWidth, 376);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texHeight, 380);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texId, 384);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texVersion, 388);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, tilePropsUBO, 392);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, tilePropsUBOSize, 456);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, cameraDistance, 460);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, texFilter, 464);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, subLayerIndex, 468);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, stencilReference, 472);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, stencilMode, 476);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetId, 480);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetWidth, 484);
-COMMAND_EXPORT_ABI_OFFSET(DrawCommand, renderTargetHeight, 488);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, bufferId, 40);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, bufferVersion, 44);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, layerIndex, 48);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, subLayerIndex, 52);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, payloadOffset, 56);
+COMMAND_EXPORT_ABI_OFFSET(DrawCommand, payloadSize, 60);
+COMMAND_EXPORT_ABI_OFFSET(CommandPayloadHeader, drawableUBOSize, 0);
+COMMAND_EXPORT_ABI_OFFSET(CommandPayloadHeader, propsUBOSize, 2);
+COMMAND_EXPORT_ABI_OFFSET(CommandPayloadHeader, tilePropsUBOSize, 4);
+COMMAND_EXPORT_ABI_OFFSET(CommandPayloadHeader, sections, 6);
+COMMAND_EXPORT_ABI_OFFSET(CommandTexture, data, 0);
+COMMAND_EXPORT_ABI_OFFSET(CommandTexture, width, 8);
+COMMAND_EXPORT_ABI_OFFSET(CommandTexture, height, 12);
+COMMAND_EXPORT_ABI_OFFSET(CommandTexture, id, 16);
+COMMAND_EXPORT_ABI_OFFSET(CommandTexture, version, 20);
+COMMAND_EXPORT_ABI_OFFSET(CommandTexture, channels, 24);
+COMMAND_EXPORT_ABI_OFFSET(CommandTexture, filter, 28);
+COMMAND_EXPORT_ABI_OFFSET(CommandStencil, reference, 0);
+COMMAND_EXPORT_ABI_OFFSET(CommandStencil, mode, 4);
+COMMAND_EXPORT_ABI_OFFSET(CommandRenderTarget, id, 0);
+COMMAND_EXPORT_ABI_OFFSET(CommandRenderTarget, width, 4);
+COMMAND_EXPORT_ABI_OFFSET(CommandRenderTarget, height, 8);
 
-/// Per-frame data accumulated during render and read by an external consumer.
+/// Borrowed UBO bytes and optional values for one command.
+/// Spans into a frame arena remain valid only until it is appended, compacted, or released.
+struct DrawCommandPayload {
+    std::span<const uint8_t> drawableUBO;
+    std::span<const uint8_t> propsUBO;
+    std::span<const uint8_t> tilePropsUBO;
+    std::optional<CommandTexture> texture;
+    std::optional<CommandStencil> stencil;
+    std::optional<CommandRenderTarget> renderTarget;
+    std::optional<float> cameraDistance;
+};
+
+/// Validates a command's payload bounds and exposes its borrowed UBO spans.
+class CommandPayloadView {
+public:
+    CommandPayloadView(std::span<const uint8_t> arena, const DrawCommand&);
+    bool valid() const noexcept { return valid_; }
+    /// Invalid records expose an empty payload.
+    const DrawCommandPayload& get() const noexcept { return payload; }
+
+private:
+    DrawCommandPayload payload;
+    bool valid_ = false;
+};
+
+/// Commands and their payload arena must be published and retained together.
 struct FrameData {
     std::vector<DrawCommand> commands;
+    std::vector<uint8_t> payload;
     std::optional<std::array<float, 4>> clearColor;
 
     void clear() {
         commands.clear();
+        payload.clear();
         clearColor.reset();
     }
 
-    /// Add a draw command with direct pointers to vertex/index data (zero-copy)
+    /// Appends optional data and replaces the command's frame-relative reference.
+    /// Sources may borrow this arena, including when appending reallocates it.
+    /// Throws length_error if UBO lengths or the arena exceed their ABI limits.
+    /// Throws out_of_range if a source extends beyond this arena's used bytes.
+    void setPayload(DrawCommand&, const DrawCommandPayload&);
+
+    /// Removes unreferenced payload blocks while preserving shared references.
+    /// Invalidates borrowed spans and throws invalid_argument for malformed references.
+    void compactPayload();
+
+    /// Adds geometry whose storage remains owned by the renderer or bridge.
     DrawCommand& addCommand(ShaderType shader,
                             DrawModeType mode,
                             const void* vertices,

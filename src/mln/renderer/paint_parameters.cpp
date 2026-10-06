@@ -183,7 +183,8 @@ static_assert(sizeof(ClippingMaskVertex) == 4);
 void emitClippingMaskCommand(PaintParameters& parameters, const UnwrappedTileID& tileID, int32_t stencilID) {
     const auto matrix = util::cast<float>(parameters.matrixForTile(tileID));
 
-    auto& command = command_export::getFrameData().addCommand(command_export::ShaderType::ClippingMask,
+    auto& frame = command_export::getFrameData();
+    auto& command = frame.addCommand(command_export::ShaderType::ClippingMask,
                                                               command_export::DrawModeType::Triangles,
                                                               clippingMaskVertices.data(),
                                                               sizeof(ClippingMaskVertex),
@@ -192,10 +193,11 @@ void emitClippingMaskCommand(PaintParameters& parameters, const UnwrappedTileID&
                                                               clippingMaskIndices.size());
     command.layerIndex = command_export::getCurrentLayerIndex();
     command.subLayerIndex = std::numeric_limits<int32_t>::min();
-    command.stencilReference = static_cast<uint32_t>(stencilID);
-    command.stencilMode = command_export::StencilModeType::ClippingMask;
-    std::memcpy(command.drawableUBO, matrix.data(), sizeof(matrix));
-    command.drawableUBOSize = sizeof(matrix);
+    command_export::DrawCommandPayload payload;
+    payload.drawableUBO = {reinterpret_cast<const uint8_t*>(matrix.data()), sizeof(matrix)};
+    payload.stencil = command_export::CommandStencil{
+        static_cast<uint32_t>(stencilID), command_export::StencilModeType::ClippingMask};
+    frame.setPayload(command, payload);
 }
 #endif
 
@@ -231,12 +233,14 @@ void PaintParameters::clearStencil() {
     // Command Export has no mid-pass stencil clear call. Preserve the operation
     // in FrameData at its exact native ordering point; the consumer replays this
     // control command by clearing (or replacing across) the stencil target.
-    auto& command = command_export::getFrameData().addCommand(
+    auto& frame = command_export::getFrameData();
+    auto& command = frame.addCommand(
         command_export::ShaderType::ClippingMask, command_export::DrawModeType::Triangles, nullptr, 0, 0, nullptr, 0);
     command.layerIndex = command_export::getCurrentLayerIndex();
     command.subLayerIndex = std::numeric_limits<int32_t>::min();
-    command.stencilReference = 0;
-    command.stencilMode = command_export::StencilModeType::Clear;
+    command_export::DrawCommandPayload payload;
+    payload.stencil = command_export::CommandStencil{0, command_export::StencilModeType::Clear};
+    frame.setPayload(command, payload);
     context.renderingStats().stencilClears++;
 #endif
 }
