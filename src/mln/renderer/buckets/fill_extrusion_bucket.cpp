@@ -21,6 +21,7 @@
 #endif
 
 #include <cassert>
+#include <cstring>
 
 namespace mapbox {
 namespace util {
@@ -52,6 +53,18 @@ using namespace style;
 
 struct GeometryTooLongException : std::exception {};
 
+namespace {
+
+template <typename T>
+uint64_t bitsOf(T value) {
+    static_assert(sizeof(T) == sizeof(uint64_t));
+    uint64_t bits;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+} // namespace
+
 FillExtrusionBucket::FillExtrusionBucket(
     const FillExtrusionBucket::PossiblyEvaluatedLayoutProperties& layout_,
     const std::map<std::string, Immutable<style::LayerProperties>>& layerPaintProperties,
@@ -76,7 +89,34 @@ void FillExtrusionBucket::addFeature(const GeometryTileFeature& feature,
                                      const PatternLayerMap& patternDependencies,
                                      std::size_t index,
                                      const CanonicalTileID& canonical) {
+    FillExtrusionFeaturePart part;
+    part.featureIndex = static_cast<uint32_t>(index);
+    feature.getID().match(
+        [&](uint64_t value) {
+            part.idType = FillExtrusionFeatureIdType::Unsigned;
+            part.idValue = value;
+        },
+        [&](int64_t value) {
+            part.idType = FillExtrusionFeatureIdType::Signed;
+            part.idValue = bitsOf(value);
+        },
+        [&](double value) {
+            part.idType = FillExtrusionFeatureIdType::Double;
+            part.idValue = bitsOf(value);
+        },
+        [&](const std::string& value) {
+            const auto& text = featureIdStrings.emplace_back(value);
+            part.idType = FillExtrusionFeatureIdType::String;
+            part.idLength = static_cast<uint32_t>(text.size());
+            part.idValue = reinterpret_cast<uintptr_t>(text.data());
+        },
+        [](const auto&) {});
+
+    uint32_t nextPolygonIndex = 0;
     for (auto& polygon : classifyRings(geometry)) {
+        // Number every classified polygon so indices match query results.
+        part.polygonIndex = nextPolygonIndex++;
+
         // Optimize polygons with many interior rings for earcut tessellation.
         limitHoles(polygon, 500);
 
@@ -103,10 +143,12 @@ void FillExtrusionBucket::addFeature(const GeometryTileFeature& feature,
         flatIndices.reserve(totalVertices);
 
         std::size_t startVertices = vertices.elements();
+        const std::size_t startIndices = triangles.elements();
 
         if (triangleSegments.empty() || triangleSegments.back().vertexLength + (5 * (totalVertices - 1) + 1) >
                                             std::numeric_limits<uint16_t>::max()) {
             triangleSegments.emplace_back(startVertices, triangles.elements());
+            featurePartSegmentStarts.push_back(featureParts.size());
         }
 
         auto& triangleSegment = triangleSegments.back();
@@ -203,6 +245,12 @@ void FillExtrusionBucket::addFeature(const GeometryTileFeature& feature,
         triangleSegment.vertexLength += totalVertices;
         triangleSegment.indexLength += nIndices;
 
+        part.vertexOffset = static_cast<uint32_t>(startVertices - triangleSegment.vertexOffset);
+        part.vertexCount = static_cast<uint32_t>(vertices.elements() - startVertices);
+        part.indexOffset = static_cast<uint32_t>(startIndices - triangleSegment.indexOffset);
+        part.indexCount = static_cast<uint32_t>(triangles.elements() - startIndices);
+        featureParts.push_back(part);
+
         if (instanceSegments.empty()) {
             instanceSegments.emplace_back(RenderStaticData::fillExtrusionSegment());
         }
@@ -222,6 +270,14 @@ void FillExtrusionBucket::addFeature(const GeometryTileFeature& feature,
 
 void FillExtrusionBucket::upload([[maybe_unused]] gfx::UploadPass& uploadPass) {
     uploaded = true;
+}
+
+std::span<const FillExtrusionFeaturePart> FillExtrusionBucket::featurePartsForSegment(std::size_t segment) const {
+    if (segment >= featurePartSegmentStarts.size()) return {};
+    const std::size_t begin = featurePartSegmentStarts[segment];
+    const std::size_t end = segment + 1 < featurePartSegmentStarts.size() ? featurePartSegmentStarts[segment + 1]
+                                                                         : featureParts.size();
+    return std::span<const FillExtrusionFeaturePart>(featureParts).subspan(begin, end - begin);
 }
 
 bool FillExtrusionBucket::hasData() const {

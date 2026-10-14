@@ -14,6 +14,7 @@
 #include <mln/gfx/vertex_attribute.hpp>
 #include <mln/gfx/vertex_vector.hpp>
 #include <mln/renderer/bucket.hpp>
+#include <mln/renderer/buckets/fill_extrusion_bucket.hpp>
 #include <mln/renderer/paint_parameters.hpp>
 #include <mln/shaders/circle_layer_ubo.hpp>
 #include <mln/shaders/fill_extrusion_layer_ubo.hpp>
@@ -195,6 +196,62 @@ StableFillExtrusionIdentity stableFillExtrusionIdentityFor(
     state.vertexRevision = vertexRevision;
     state.indexRevision = indexRevision;
     return {state.bufferId, state.version};
+}
+
+// The bucket's part records are exported in place.
+static_assert(sizeof(FillExtrusionFeaturePart) == sizeof(CommandFillExtrusionPart));
+static_assert(offsetof(FillExtrusionFeaturePart, featureIndex) == offsetof(CommandFillExtrusionPart, featureIndex));
+static_assert(offsetof(FillExtrusionFeaturePart, polygonIndex) == offsetof(CommandFillExtrusionPart, polygonIndex));
+static_assert(offsetof(FillExtrusionFeaturePart, vertexOffset) == offsetof(CommandFillExtrusionPart, vertexOffset));
+static_assert(offsetof(FillExtrusionFeaturePart, vertexCount) == offsetof(CommandFillExtrusionPart, vertexCount));
+static_assert(offsetof(FillExtrusionFeaturePart, indexOffset) == offsetof(CommandFillExtrusionPart, indexOffset));
+static_assert(offsetof(FillExtrusionFeaturePart, indexCount) == offsetof(CommandFillExtrusionPart, indexCount));
+static_assert(offsetof(FillExtrusionFeaturePart, idType) == offsetof(CommandFillExtrusionPart, idType));
+static_assert(offsetof(FillExtrusionFeaturePart, idLength) == offsetof(CommandFillExtrusionPart, idLength));
+static_assert(offsetof(FillExtrusionFeaturePart, idValue) == offsetof(CommandFillExtrusionPart, idValue));
+
+/// Describes the parts of the bucket triangle segment drawn as [segment].
+///
+/// Drawable segments mirror the bucket's triangle segments. They are matched by
+/// offsets so a divergent segment list exports nothing rather than wrong ranges.
+std::optional<CommandFillExtrusionFeatures> fillExtrusionFeaturesFor(const FillExtrusionBucket& bucket,
+                                                                     const OverscaledTileID& tileID,
+                                                                     std::size_t ordinal,
+                                                                     const SegmentBase& segment) {
+    const auto matches = [&](std::size_t index) {
+        const auto& candidate = bucket.triangleSegments[index];
+        return candidate.vertexOffset == segment.vertexOffset && candidate.indexOffset == segment.indexOffset;
+    };
+    std::optional<std::size_t> index;
+    if (ordinal < bucket.triangleSegments.size() && matches(ordinal)) {
+        index = ordinal;
+    } else {
+        for (std::size_t candidate = 0; candidate < bucket.triangleSegments.size(); ++candidate) {
+            if (matches(candidate)) {
+                index = candidate;
+                break;
+            }
+        }
+    }
+    if (!index) return std::nullopt;
+
+    const auto parts = bucket.featurePartsForSegment(*index);
+    CommandFillExtrusionFeatures features;
+    features.parts = parts.data();
+    features.partCount = static_cast<uint32_t>(parts.size());
+    features.partStride = sizeof(FillExtrusionFeaturePart);
+    features.tileWrap = tileID.wrap;
+    features.tileOverscaledZ = tileID.overscaledZ;
+    features.tileZ = tileID.canonical.z;
+    features.tileX = tileID.canonical.x;
+    features.tileY = tileID.canonical.y;
+    features.segmentIndex = static_cast<uint32_t>(*index);
+    features.metadataId = static_cast<uint64_t>(bucket.getID().id());
+    if (const auto* layerID = getCurrentLayerID()) {
+        features.layerId = layerID->data();
+        features.layerIdLength = static_cast<uint32_t>(layerID->size());
+    }
+    return features;
 }
 
 } // namespace
@@ -1131,6 +1188,11 @@ void Drawable::draw(PaintParameters& parameters) const {
             renderTarget->getTextureId(), renderTarget->getSize().width, renderTarget->getSize().height};
     }
     std::optional<std::pair<uint32_t, uint32_t>> payloadReference;
+    // Feature parts differ per segment, so those commands do not share payloads.
+    const FillExtrusionBucket* fillExtrusionBucket = nullptr;
+    if (shader == ShaderType::FillExtrusion && getTileID()) {
+        fillExtrusionBucket = static_cast<const FillExtrusionBucket*>(getBucket().get());
+    }
 
     auto emit = [&](DrawModeType mode,
                     const uint8_t* vp,
@@ -1179,7 +1241,14 @@ void Drawable::draw(PaintParameters& parameters) const {
         cmd.bufferId = exportedBufferId;
         cmd.bufferVersion = exportedBufferVersion;
         cmd.flags = extraFlags;
-        if (!payloadReference) {
+        const auto features = fillExtrusionBucket && segment ? fillExtrusionFeaturesFor(
+                                                                   *fillExtrusionBucket, *getTileID(), segmentOrdinal, *segment)
+                                                             : std::nullopt;
+        if (features) {
+            auto segmentPayload = commandPayload;
+            segmentPayload.fillExtrusionFeatures = features;
+            frame.setPayload(cmd, segmentPayload);
+        } else if (!payloadReference) {
             frame.setPayload(cmd, commandPayload);
             payloadReference = std::make_pair(cmd.payloadOffset, cmd.payloadSize);
         } else {

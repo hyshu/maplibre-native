@@ -26,6 +26,7 @@ add_library(
     $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/circle_vertex_data.test.cpp>
     $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/drawable.test.cpp>
     $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/fill_extrusion_vertex_data.test.cpp>
+    $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/fill_extrusion_features.test.cpp>
     $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/fill_vertex_data.test.cpp>
     $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/line_vertex_data.test.cpp>
     $<$<BOOL:${MLN_WITH_COMMAND_EXPORT}>:${PROJECT_SOURCE_DIR}/test/command_export/dynamic_texture.test.cpp>

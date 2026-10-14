@@ -20,6 +20,7 @@ struct PayloadLayout {
     size_t stencil = 0;
     size_t target = 0;
     size_t camera = 0;
+    size_t fillExtrusionFeatures = 0;
     size_t size;
 
     explicit PayloadLayout(const CommandPayloadHeader& header) {
@@ -45,6 +46,10 @@ struct PayloadLayout {
         if (header.sections & CommandPayloadSections::CameraDistance) {
             camera = alignTo(cursor, 4);
             cursor = camera + sizeof(float);
+        }
+        if (header.sections & CommandPayloadSections::FillExtrusionFeatures) {
+            fillExtrusionFeatures = alignTo(cursor, 8);
+            cursor = fillExtrusionFeatures + sizeof(CommandFillExtrusionFeatures);
         }
         size = alignTo(cursor, 8);
     }
@@ -123,6 +128,11 @@ CommandPayloadView::CommandPayloadView(std::span<const uint8_t> arena, const Dra
         std::memcpy(&value, bytes.data() + layout.camera, sizeof(value));
         payload.cameraDistance = value;
     }
+    if (layout.fillExtrusionFeatures) {
+        CommandFillExtrusionFeatures value;
+        std::memcpy(&value, bytes.data() + layout.fillExtrusionFeatures, sizeof(value));
+        payload.fillExtrusionFeatures = value;
+    }
     valid_ = true;
 }
 
@@ -133,6 +143,7 @@ void FrameData::setPayload(DrawCommand& command, const DrawCommandPayload& data)
     if (data.stencil) header.sections |= CommandPayloadSections::Stencil;
     if (data.renderTarget) header.sections |= CommandPayloadSections::RenderTarget;
     if (data.cameraDistance) header.sections |= CommandPayloadSections::CameraDistance;
+    if (data.fillExtrusionFeatures) header.sections |= CommandPayloadSections::FillExtrusionFeatures;
     if (header.drawableUBOSize == 0 && header.propsUBOSize == 0 && header.tilePropsUBOSize == 0 && header.sections == 0) {
         command.payloadOffset = 0;
         command.payloadSize = 0;
@@ -166,6 +177,11 @@ void FrameData::setPayload(DrawCommand& command, const DrawCommandPayload& data)
     if (data.stencil) std::memcpy(destination + layout.stencil, &*data.stencil, sizeof(CommandStencil));
     if (data.renderTarget) std::memcpy(destination + layout.target, &*data.renderTarget, sizeof(CommandRenderTarget));
     if (data.cameraDistance) std::memcpy(destination + layout.camera, &*data.cameraDistance, sizeof(float));
+    if (data.fillExtrusionFeatures) {
+        std::memcpy(destination + layout.fillExtrusionFeatures,
+                    &*data.fillExtrusionFeatures,
+                    sizeof(CommandFillExtrusionFeatures));
+    }
     command.payloadOffset = static_cast<uint32_t>(offset);
     command.payloadSize = static_cast<uint32_t>(layout.size);
 }
@@ -212,6 +228,7 @@ void FrameData::compactPayload() {
 
 static FrameData g_frameData;
 static uint32_t g_currentLayerIndex = 0;
+static const std::string* g_currentLayerID = nullptr;
 
 FrameData& getFrameData() {
     return g_frameData;
@@ -223,6 +240,14 @@ void setCurrentLayerIndex(uint32_t idx) {
 
 uint32_t getCurrentLayerIndex() {
     return g_currentLayerIndex;
+}
+
+void setCurrentLayerID(const std::string* id) {
+    g_currentLayerID = id;
+}
+
+const std::string* getCurrentLayerID() {
+    return g_currentLayerID;
 }
 
 } // namespace command_export
