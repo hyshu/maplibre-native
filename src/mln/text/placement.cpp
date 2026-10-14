@@ -2158,6 +2158,9 @@ void Placement::refreshPlacedSymbolData(const RenderLayerReferences& layers, con
             PlacementContext ctx{bucket, item.tile, state, zoom, refreshCollisionGroups.get(item.sourceId)};
             const auto& tileID = item.tile.get().id;
             for (auto* data : found->second) {
+                // Unplaced symbols are never exported, so their screen
+                // geometry does not need to follow the camera.
+                if (!data->textPlaced && !data->iconPlaced) continue;
                 if (refreshed.contains(data) || data->layer != bucket.bucketLeaderID || data->tileWrap != tileID.wrap ||
                     data->canonicalZ != tileID.canonical.z || data->canonicalX != tileID.canonical.x ||
                     data->canonicalY != tileID.canonical.y ||
