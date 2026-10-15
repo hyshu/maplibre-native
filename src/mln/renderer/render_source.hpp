@@ -106,6 +106,8 @@ public:
 
     virtual void setCacheEnabled(bool) {}
 
+    virtual void setCacheSize(uint32_t) {}
+
     virtual void setFastPFOREnabled(bool) {}
 
     virtual void reduceMemoryUse() = 0;

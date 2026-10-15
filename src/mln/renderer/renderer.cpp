@@ -171,10 +171,18 @@ bool Renderer::getTileCacheEnabled() const {
     return impl->orchestrator.getTileCacheEnabled();
 }
 
+void Renderer::setTileCacheSize(uint32_t size) {
+    impl->orchestrator.setTileCacheSize(size);
+}
+
+uint32_t Renderer::getTileCacheSize() const {
+    return impl->orchestrator.getTileCacheSize();
+}
+
 void Renderer::reduceMemoryUse() {
     gfx::BackendScope guard{impl->backend};
-    impl->reduceMemoryUse();
     impl->orchestrator.reduceMemoryUse();
+    impl->reduceMemoryUse();
 }
 
 void Renderer::clearData() {

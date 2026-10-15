@@ -13,6 +13,7 @@
 #include <mln/util/range.hpp>
 
 #include <memory>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 #include <map>
@@ -61,6 +62,8 @@ public:
     std::vector<Feature> querySourceFeatures(const SourceQueryOptions&) const;
 
     void setCacheEnabled(bool);
+    /// Caps offscreen tile count without removing active or fading tiles.
+    void setCacheSize(uint32_t);
     void reduceMemoryUse();
 
     void setObserver(TileObserver*);
@@ -85,6 +88,7 @@ private:
 
     bool fadingTiles = false;
     bool cacheEnabled = true;
+    uint32_t maximumCacheSize = std::numeric_limits<uint32_t>::max();
 };
 
 } // namespace mln

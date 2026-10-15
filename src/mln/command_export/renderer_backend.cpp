@@ -14,7 +14,7 @@ RendererBackend::RendererBackend(gfx::ContextMode contextMode)
 RendererBackend::~RendererBackend() = default;
 
 std::unique_ptr<gfx::Context> RendererBackend::createContext() {
-    return std::make_unique<Context>();
+    return std::make_unique<Context>(getThreadPool());
 }
 
 void RendererBackend::initShaders(gfx::ShaderRegistry& registry, const ProgramParameters&) {

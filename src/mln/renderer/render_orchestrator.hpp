@@ -17,6 +17,7 @@
 #include <mln/renderer/render_tree.hpp>
 
 #include <map>
+#include <limits>
 #include <memory>
 #include <set>
 #include <string>
@@ -96,6 +97,8 @@ public:
 
     void setTileCacheEnabled(bool);
     bool getTileCacheEnabled() const;
+    void setTileCacheSize(uint32_t);
+    uint32_t getTileCacheSize() const { return tileCacheSize; }
     void reduceMemoryUse();
     void dumpDebugLogs();
     void collectPlacedSymbolData(bool);
@@ -230,6 +233,7 @@ private:
     bool placedSymbolDataCollected = false;
     bool placedSymbolDataCollectionChanged = false;
     bool tileCacheEnabled = true;
+    uint32_t tileCacheSize = std::numeric_limits<uint32_t>::max();
 
 #if MLN_RENDER_BACKEND_OPENGL
     bool androidGoldfishMitigationEnabled{false};
