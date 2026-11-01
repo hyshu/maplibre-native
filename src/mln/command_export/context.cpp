@@ -21,11 +21,20 @@ namespace mln {
 namespace command_export {
 
 Context::Context()
-    : gfx::Context(32) {}
+    : Context(TaggedScheduler{Scheduler::GetBackground(), util::SimpleIdentity{}}) {}
 
-Context::~Context() noexcept = default;
+Context::Context(const TaggedScheduler& threadPool_)
+    : gfx::Context(32),
+      threadPool(threadPool_) {}
 
-void Context::beginFrame() {}
+Context::~Context() noexcept {
+    threadPool.waitForEmpty();
+    threadPool.runRenderJobs(true);
+}
+
+void Context::beginFrame() {
+    performCleanup();
+}
 
 void Context::endFrame() {}
 
@@ -33,7 +42,16 @@ std::unique_ptr<gfx::CommandEncoder> Context::createCommandEncoder() {
     return std::make_unique<CommandEncoder>(*this);
 }
 
-void Context::performCleanup() {}
+void Context::performCleanup() {
+    threadPool.runRenderJobs();
+}
+
+void Context::reduceMemoryUsage() {
+    // Tile destruction posts render resources back to this context's queue.
+    // Wait for those posts so reclamation does not depend on another frame.
+    threadPool.waitForEmpty();
+    performCleanup();
+}
 
 gfx::UniqueDrawableBuilder Context::createDrawableBuilder(std::string name) {
     return std::make_unique<DrawableBuilder>(std::move(name));

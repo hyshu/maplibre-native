@@ -2,6 +2,7 @@
 
 #include <mln/gfx/context.hpp>
 #include <mln/command_export/uniform_buffer.hpp>
+#include <mln/actor/scheduler.hpp>
 
 namespace mln {
 namespace command_export {
@@ -9,13 +10,15 @@ namespace command_export {
 class Context final : public gfx::Context {
 public:
     Context();
+    /// Uses the backend's scheduler to reclaim deferred render resources.
+    explicit Context(const TaggedScheduler&);
     ~Context() noexcept override;
 
     void beginFrame() override;
     void endFrame() override;
     std::unique_ptr<gfx::CommandEncoder> createCommandEncoder() override;
     void performCleanup() override;
-    void reduceMemoryUsage() override {}
+    void reduceMemoryUsage() override;
 
     gfx::UniqueDrawableBuilder createDrawableBuilder(std::string name) override;
     gfx::UniformBufferPtr createUniformBuffer(const void* data,
@@ -58,6 +61,7 @@ public:
     void unbindGlobalUniformBuffers(gfx::RenderPass&) const noexcept override {}
 
 private:
+    TaggedScheduler threadPool;
     UniformBufferArray globalUniformBuffers;
 };
 

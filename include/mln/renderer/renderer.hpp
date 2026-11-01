@@ -219,6 +219,11 @@ public:
     // Memory
     void setTileCacheEnabled(bool);
     bool getTileCacheEnabled() const;
+    /// Caps cached offscreen tiles per source. Zero disables caching and
+    /// UINT32_MAX restores the viewport-derived limit. Active tiles are retained.
+    void setTileCacheSize(uint32_t);
+    /// Returns the configured count cap, before the viewport limit is applied.
+    uint32_t getTileCacheSize() const;
     void reduceMemoryUse();
     void clearData();
 

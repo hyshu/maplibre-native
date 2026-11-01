@@ -243,7 +243,7 @@ void TilePyramid::update(const std::vector<Immutable<style::LayerProperties>>& l
             std::max(static_cast<double>(parameters.transformState.getSize().width) / tileSize, 1.0) *
             std::max(static_cast<double>(parameters.transformState.getSize().height) / tileSize, 1.0) *
             (parameters.transformState.getMaxZoom() - parameters.transformState.getMinZoom() + 1) * 0.5);
-        cache.setSize(conservativeCacheSize);
+        cache.setSize(std::min(conservativeCacheSize, static_cast<size_t>(maximumCacheSize)));
     } else {
         cache.setSize(0);
     }
@@ -421,8 +421,15 @@ void TilePyramid::setCacheEnabled(bool enable) {
     cacheEnabled = enable;
 }
 
+void TilePyramid::setCacheSize(uint32_t size) {
+    maximumCacheSize = size;
+    cache.setSize(std::min(cache.getMaxSize(), static_cast<size_t>(size)));
+    cache.deferPendingReleases();
+}
+
 void TilePyramid::reduceMemoryUse() {
     cache.clear();
+    cache.deferPendingReleases();
 }
 
 void TilePyramid::setObserver(TileObserver* observer_) {
