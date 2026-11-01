@@ -18,6 +18,7 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -144,8 +145,9 @@ public:
 
     void processChanges();
 
-    bool addRenderTarget(RenderTargetPtr);
-    bool removeRenderTarget(const RenderTargetPtr&);
+    /// Shared targets remain active while at least one owner is registered.
+    bool addRenderTarget(RenderTargetPtr, util::SimpleIdentity owner = util::SimpleIdentity::Empty);
+    bool removeRenderTarget(const RenderTargetPtr&, util::SimpleIdentity owner = util::SimpleIdentity::Empty);
 
     template <typename Func /* void(RenderTarget&) */>
     void visitRenderTargets(Func f) {
@@ -254,6 +256,7 @@ private:
     LayerGroupMap layerGroupsByLayerIndex;
 
     std::vector<RenderTargetPtr> renderTargets;
+    std::map<RenderTargetPtr, std::set<util::SimpleIdentity>> renderTargetOwners;
     RenderItem::DebugLayerGroupMap debugLayerGroups;
 
     gfx::RenderingStats::FrameRenderedFeaturesMap frameRenderedFeatures;

@@ -25,18 +25,18 @@ void UpdateLayerGroupIndexRequest::execute(RenderOrchestrator &orchestrator) {
     orchestrator.updateLayerIndex(layerGroup, newLayerIndex);
 }
 
-AddRenderTargetRequest::AddRenderTargetRequest(RenderTargetPtr renderTarget_)
-    : renderTarget(std::move(renderTarget_)) {}
+AddRenderTargetRequest::AddRenderTargetRequest(RenderTargetPtr renderTarget_, util::SimpleIdentity owner_)
+    : renderTarget(std::move(renderTarget_)), owner(owner_) {}
 
 void AddRenderTargetRequest::execute(RenderOrchestrator &orchestrator) {
-    orchestrator.addRenderTarget(std::move(renderTarget));
+    orchestrator.addRenderTarget(std::move(renderTarget), owner);
 }
 
-RemoveRenderTargetRequest::RemoveRenderTargetRequest(RenderTargetPtr renderTarget_)
-    : renderTarget(std::move(renderTarget_)) {}
+RemoveRenderTargetRequest::RemoveRenderTargetRequest(RenderTargetPtr renderTarget_, util::SimpleIdentity owner_)
+    : renderTarget(std::move(renderTarget_)), owner(owner_) {}
 
 void RemoveRenderTargetRequest::execute(RenderOrchestrator &orchestrator) {
-    orchestrator.removeRenderTarget(renderTarget);
+    orchestrator.removeRenderTarget(renderTarget, owner);
 }
 
 } // namespace mln

@@ -43,7 +43,7 @@ private:
 
     void prepare(const LayerPrepareParameters&) override;
 
-    void addRenderTarget(const RenderTargetPtr&, UniqueChangeRequestVec&);
+    void updateRenderTargets(std::vector<RenderTargetPtr>, UniqueChangeRequestVec&);
     void removeRenderTargets(UniqueChangeRequestVec&);
 
     // Paint properties
@@ -55,6 +55,8 @@ private:
 
     gfx::ShaderProgramBasePtr hillshadePrepareShader;
     gfx::ShaderProgramBasePtr hillshadeShader;
+    // Buckets and their derivative textures can be shared by multiple layers.
+    util::SimpleIdentity renderTargetOwner;
     std::vector<RenderTargetPtr> activatedRenderTargets;
 
     using HillshadeVertexVector = gfx::VertexVector<HillshadeLayoutVertex>;

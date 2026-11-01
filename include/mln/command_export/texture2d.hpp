@@ -37,6 +37,7 @@ public:
     /// version bumps on every upload).
     uint32_t getTextureId() const { return textureId; }
     uint32_t getVersion() const { return version; }
+    gfx::TextureChannelDataType getChannelType() const noexcept { return channelType; }
     gfx::TextureFilterType getSamplerFilter() const noexcept { return samplerState.filter; }
 
 private:

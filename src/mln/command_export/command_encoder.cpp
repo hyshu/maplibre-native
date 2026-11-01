@@ -27,6 +27,9 @@ std::unique_ptr<gfx::RenderPass> CommandEncoder::createRenderPass(const char* na
         auto target = std::static_pointer_cast<Texture2D>(offscreen.getTexture());
         auto& command = getFrameData().addCommand(
             ShaderType::RenderTarget, DrawModeType::Triangles, nullptr, 0, 0, nullptr, 0);
+        if (target->getChannelType() == gfx::TextureChannelDataType::UnsignedByte) {
+            command.flags |= DrawCommandFlags::RenderTargetRGBA8;
+        }
         command.renderTargetId = target->getTextureId();
         command.renderTargetWidth = target->getSize().width;
         command.renderTargetHeight = target->getSize().height;
