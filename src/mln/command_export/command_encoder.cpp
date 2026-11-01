@@ -25,20 +25,22 @@ std::unique_ptr<gfx::RenderPass> CommandEncoder::createRenderPass(const char* na
     if (name && std::strcmp(name, "render target") == 0) {
         auto& offscreen = static_cast<OffscreenTexture&>(descriptor.renderable);
         auto target = std::static_pointer_cast<Texture2D>(offscreen.getTexture());
-        auto& command = getFrameData().addCommand(
+        auto& frame = getFrameData();
+        auto& command = frame.addCommand(
             ShaderType::RenderTarget, DrawModeType::Triangles, nullptr, 0, 0, nullptr, 0);
         if (target->getChannelType() == gfx::TextureChannelDataType::UnsignedByte) {
             command.flags |= DrawCommandFlags::RenderTargetRGBA8;
         }
-        command.renderTargetId = target->getTextureId();
-        command.renderTargetWidth = target->getSize().width;
-        command.renderTargetHeight = target->getSize().height;
+        DrawCommandPayload payload;
+        payload.renderTarget = CommandRenderTarget{
+            target->getTextureId(), target->getSize().width, target->getSize().height};
+        std::array<float, 4> clearColor;
         if (descriptor.clearColor) {
             const auto& color = *descriptor.clearColor;
-            const std::array<float, 4> clearColor{color.r, color.g, color.b, color.a};
-            std::memcpy(command.propsUBO, clearColor.data(), sizeof(clearColor));
-            command.propsUBOSize = sizeof(clearColor);
+            clearColor = {color.r, color.g, color.b, color.a};
+            payload.propsUBO = {reinterpret_cast<const uint8_t*>(clearColor.data()), sizeof(clearColor)};
         }
+        frame.setPayload(command, payload);
         return std::make_unique<RenderPass>(std::move(target));
     }
     // MapLibre can optimize the first solid background layer into the clear
