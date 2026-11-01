@@ -524,7 +524,6 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
     }
 
     // Symbol placement.
-    assert((updateParameters->mode == MapMode::Tile) || !placedSymbolDataCollected);
     bool symbolBucketsChanged = false;
     bool symbolBucketsAdded = false;
     std::set<std::string> usedSymbolLayers;
@@ -557,21 +556,28 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
             placementUpdatePeriodOverride = std::optional<Duration>(Milliseconds(30));
         }
 
-        renderTreeParameters->placementChanged = !placementController.placementIsRecent(
-            updateParameters->timePoint,
-            static_cast<float>(updateParameters->transformState.getZoom()),
-            placementUpdatePeriodOverride);
+        renderTreeParameters->placementChanged = placedSymbolDataCollectionChanged ||
+                                                 !placementController.placementIsRecent(
+                                                     updateParameters->timePoint,
+                                                     static_cast<float>(updateParameters->transformState.getZoom()),
+                                                     placementUpdatePeriodOverride);
         symbolBucketsChanged |= renderTreeParameters->placementChanged;
         if (renderTreeParameters->placementChanged) {
             Mutable<Placement> placement = Placement::create(updateParameters, placementController.getPlacement());
+            placement->collectPlacedSymbolData(placedSymbolDataCollected);
             placement->placeLayers(layersNeedPlacement);
             placementController.setPlacement(std::move(placement));
+            placedSymbolDataCollectionChanged = false;
             crossTileSymbolIndex.pruneUnusedLayers(usedSymbolLayers);
             for (const auto& entry : renderSources) {
                 entry.second->updateFadingTiles();
             }
         } else {
             placementController.setPlacementStale();
+            if (placedSymbolDataCollected) {
+                placementController.getPlacement()->refreshPlacedSymbolData(layersNeedPlacement,
+                                                                            updateParameters->transformState);
+            }
         }
         renderTreeParameters->symbolFadeChange = placementController.getPlacement()->symbolFadeChange(
             updateParameters->timePoint);
@@ -849,11 +855,19 @@ void RenderOrchestrator::dumpDebugLogs() {
 }
 
 void RenderOrchestrator::collectPlacedSymbolData(bool enable) {
+    if (placedSymbolDataCollected != enable) {
+        placedSymbolDataCollectionChanged = true;
+    }
     placedSymbolDataCollected = enable;
 }
 
 const std::vector<PlacedSymbolData>& RenderOrchestrator::getPlacedSymbolsData() const {
     return placementController.getPlacement()->getPlacedSymbolsData();
+}
+
+const style::LayerProperties* RenderOrchestrator::getEvaluatedLayerProperties(const std::string& layerID) const {
+    const auto* layer = getRenderLayer(layerID);
+    return layer ? layer->evaluatedProperties.get() : nullptr;
 }
 
 RenderLayer* RenderOrchestrator::getRenderLayer(const std::string& id) {

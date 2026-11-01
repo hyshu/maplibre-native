@@ -97,7 +97,9 @@ std::vector<std::u16string> BiDi::applyLineBreaking(std::set<std::size_t> lineBr
     return transformedLines;
 }
 
-std::vector<std::u16string> BiDi::processText(const std::u16string& input, std::set<std::size_t> lineBreakPoints) {
+std::vector<std::u16string> BiDi::processText(const std::u16string& input,
+                                              std::set<std::size_t> lineBreakPoints,
+                                              std::vector<std::u16string>* logicalLines) {
     UErrorCode errorCode = U_ZERO_ERROR;
 
     ubidi_setPara(impl->bidiText,
@@ -111,10 +113,23 @@ std::vector<std::u16string> BiDi::processText(const std::u16string& input, std::
         throw std::runtime_error(std::string("BiDi::processText: ") + u_errorName(errorCode));
     }
 
+    mergeParagraphLineBreaks(lineBreakPoints);
+    if (logicalLines) {
+        logicalLines->clear();
+        logicalLines->reserve(lineBreakPoints.size());
+        std::size_t start = 0;
+        for (const auto end : lineBreakPoints) {
+            logicalLines->push_back(input.substr(start, end - start));
+            start = end;
+        }
+    }
+
     return applyLineBreaking(std::move(lineBreakPoints));
 }
 
-std::vector<StyledText> BiDi::processStyledText(const StyledText& input, std::set<std::size_t> lineBreakPoints) {
+std::vector<StyledText> BiDi::processStyledText(const StyledText& input,
+                                                std::set<std::size_t> lineBreakPoints,
+                                                std::vector<StyledText>* logicalLines) {
     std::vector<StyledText> lines;
     const auto& inputText = input.first;
     const auto& styleIndices = input.second;
@@ -133,6 +148,17 @@ std::vector<StyledText> BiDi::processStyledText(const StyledText& input, std::se
     }
 
     mergeParagraphLineBreaks(lineBreakPoints);
+
+    if (logicalLines) {
+        logicalLines->clear();
+        logicalLines->reserve(lineBreakPoints.size());
+        std::size_t start = 0;
+        for (const auto end : lineBreakPoints) {
+            logicalLines->emplace_back(inputText.substr(start, end - start),
+                                       std::vector<uint8_t>(styleIndices.begin() + start, styleIndices.begin() + end));
+            start = end;
+        }
+    }
 
     std::size_t lineStartIndex = 0;
 
@@ -199,6 +225,11 @@ std::vector<StyledText> BiDi::processStyledText(const StyledText& input, std::se
     }
 
     return lines;
+}
+
+bool BiDi::isRTL(const std::u16string& input) const {
+    return ubidi_getBaseDirection(mln::utf16char_cast<const UChar*>(input.c_str()),
+                                  static_cast<int32_t>(input.size())) == UBIDI_RTL;
 }
 
 std::u16string BiDi::writeReverse(const std::u16string& input, std::size_t logicalStart, std::size_t logicalEnd) {

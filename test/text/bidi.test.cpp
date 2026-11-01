@@ -58,6 +58,21 @@ TEST(BiDi, WithLineBreaks) {
               expected);
 }
 
+TEST(BiDi, RetainsLogicalLinesAndResolvesDirection) {
+    BiDi bidi;
+    std::vector<std::u16string> logicalLines;
+    const auto input = applyArabicShaping(u"مكتبة الإسكندرية Maktabat");
+
+    const auto visualLines = bidi.processText(input, {18}, &logicalLines);
+
+    ASSERT_EQ(visualLines.size(), logicalLines.size());
+    ASSERT_EQ(logicalLines.size(), 2u);
+    EXPECT_EQ(logicalLines[0], input.substr(0, 18));
+    EXPECT_EQ(logicalLines[1], input.substr(18));
+    EXPECT_TRUE(bidi.isRTL(input));
+    EXPECT_FALSE(bidi.isRTL(u"Tokyo 東京"));
+}
+
 TEST(BiDi, StyledText) {
     // This test uses line breaks that intentionally split/reorder/interleave
     // styled blocks that are contiguous in the input

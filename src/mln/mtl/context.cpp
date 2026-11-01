@@ -206,7 +206,7 @@ gfx::UniqueDrawableBuilder Context::createDrawableBuilder(std::string name) {
 gfx::UniformBufferPtr Context::createUniformBuffer(const void* data, std::size_t size, bool persistent, bool /*ssbo*/) {
     auto buffer = std::make_shared<UniformBuffer>(
         createBuffer(data, size, gfx::BufferUsageType::StaticDraw, /*isIndexBuffer=*/false, persistent));
-    // Save CPU-side copy for Command Export export
+    // Save a CPU-side copy for Command Export.
     if (data && size > 0) {
         buffer->setCpuData(data, size);
     }
@@ -253,16 +253,18 @@ bool Context::emplaceOrUpdateUniformBuffer(gfx::UniformBufferPtr& buffer,
                                            const void* data,
                                            std::size_t size,
                                            bool persistent) {
+    bool created = false;
     if (buffer) {
         buffer->update(data, size);
     } else {
         buffer = createUniformBuffer(data, size, persistent);
+        created = true;
     }
-    // Save CPU-side copy for Command Export export
+    // Save a CPU-side copy for Command Export.
     if (buffer && data && size > 0) {
         buffer->setCpuData(data, size);
     }
-    return !buffer;
+    return created;
 }
 
 const BufferResource& Context::getTileVertexBuffer() {

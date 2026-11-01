@@ -27,6 +27,8 @@ public:
     std::unique_ptr<GeometryTileFeature> feature;
     GeometryCollection geometry;
     std::optional<TaggedString> formattedText;
+    // Human-readable text before HarfBuzz replaces characters with glyph IDs.
+    std::u16string originalText;
     std::optional<style::expression::Image> icon;
     float sortKey = 0.0f;
     std::size_t index = 0;

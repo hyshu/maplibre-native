@@ -126,8 +126,9 @@ public:
     virtual float symbolFadeChange(TimePoint now) const;
     virtual bool hasTransitions(TimePoint now) const;
     virtual bool transitionsEnabled() const;
-    virtual void collectPlacedSymbolData(bool /*enable*/) {}
+    virtual void collectPlacedSymbolData(bool enable) { placedSymbolDataCollected_ = enable; }
     virtual const std::vector<PlacedSymbolData>& getPlacedSymbolsData() const;
+    void refreshPlacedSymbolData(const RenderLayerReferences&, const TransformState&) const;
 
     const CollisionIndex& getCollisionIndex() const;
     TimePoint getCommitTime() const { return commitTime; }
@@ -152,9 +153,10 @@ protected:
                                  const PlacementContext&,
                                  const JointPlacement&,
                                  style::SymbolPlacementType,
-                                 const std::vector<ProjectedCollisionBox>& /*textBoxes*/,
-                                 const std::vector<ProjectedCollisionBox>& /*iconBoxes*/
-    ) {}
+                                 float evaluatedTextSize,
+                                 float evaluatedIconSize,
+                                 const std::vector<ProjectedCollisionBox>& textBoxes,
+                                 const std::vector<ProjectedCollisionBox>& iconBoxes);
     // Implementation specific hooks, which get called during a symbol bucket placement.
     virtual std::optional<CollisionBoundaries> getAvoidEdges(const SymbolBucket&, const mat4& /*posMatrix*/) {
         return std::nullopt;
@@ -196,6 +198,11 @@ protected:
     std::unordered_map<uint32_t, VariableOffset> variableOffsets;
     std::unordered_map<uint32_t, style::TextWritingModeType> placedOrientations;
 
+    // Paint order is independent of placement priority for viewport-Y symbols.
+    std::unordered_map<const SymbolInstance*, uint64_t> symbolRenderOrders;
+    uint32_t currentRenderGroup = 0;
+    uint32_t currentRenderOrder = 0;
+
     std::unordered_map<uint32_t, RetainedQueryData> retainedQueryData;
     CollisionGroups collisionGroups;
     mutable std::optional<Immutable<Placement>> prevPlacement;
@@ -206,6 +213,13 @@ protected:
     std::vector<ProjectedCollisionBox> iconBoxes;
     // Used for debug purposes.
     std::unordered_map<const CollisionFeature*, std::vector<ProjectedCollisionBox>> collisionCircles;
+
+    // Placed symbol data collection (works in all map modes)
+    bool placedSymbolDataCollected_ = false;
+    mutable std::vector<PlacedSymbolData> placedSymbolsData_;
+    mutable std::optional<mat4> placedSymbolRefreshProjection_;
+    mutable std::optional<double> placedSymbolRefreshZoom_;
+    mutable std::optional<Size> placedSymbolRefreshSize_;
 };
 
 } // namespace mln

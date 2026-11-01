@@ -29,7 +29,7 @@ class CollisionIndex {
 public:
     using CollisionGrid = GridIndex<IndexedSubfeature>;
 
-    explicit CollisionIndex(const TransformState&, MapMode);
+    explicit CollisionIndex(const TransformState&, MapMode, bool initializeGrid = true);
     IntersectStatus intersectsTileEdges(const CollisionBox&,
                                         Point<float> shift,
                                         const mat4& posMatrix,
@@ -52,6 +52,23 @@ public:
         std::vector<ProjectedCollisionBox>& /*out*/
     );
 
+    /**
+     * Projects collision geometry without testing or updating the collision grid.
+     *
+     * This keeps already placed symbols aligned with camera-only frames without
+     * performing another collision placement.
+     */
+    void projectFeature(const CollisionFeature& feature,
+                        Point<float> shift,
+                        const mat4& posMatrix,
+                        const mat4& labelPlaneMatrix,
+                        float textPixelRatio,
+                        const PlacedSymbol& symbol,
+                        float scale,
+                        float fontSize,
+                        bool pitchWithMap,
+                        std::vector<ProjectedCollisionBox>& /*out*/);
+
     void insertFeature(const CollisionFeature& feature,
                        const std::vector<ProjectedCollisionBox>&,
                        bool ignorePlacement,
@@ -65,6 +82,8 @@ public:
     const TransformState& getTransformState() const { return transformState; }
 
     float getViewportPadding() const { return viewportPadding; }
+
+    Point<float> projectPoint(const mat4& posMatrix, const Point<float>& point) const;
 
 private:
     bool isOffscreen(const CollisionBoundaries&) const;
@@ -97,7 +116,6 @@ private:
     std::pair<float, float> projectAnchor(const mat4& posMatrix, const Point<float>& point) const;
     std::pair<Point<float>, float> projectAndGetPerspectiveRatio(const mat4& posMatrix,
                                                                  const Point<float>& point) const;
-    Point<float> projectPoint(const mat4& posMatrix, const Point<float>& point) const;
     CollisionBoundaries getProjectedCollisionBoundaries(const mat4& posMatrix,
                                                         Point<float> shift,
                                                         float textPixelRatio,
