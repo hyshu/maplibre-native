@@ -6,6 +6,7 @@
 #include <cstring>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace mln {
@@ -149,13 +150,15 @@ constexpr uint16_t Texture = 1u << 0;
 constexpr uint16_t Stencil = 1u << 1;
 constexpr uint16_t RenderTarget = 1u << 2;
 constexpr uint16_t CameraDistance = 1u << 3;
-constexpr uint16_t All = Texture | Stencil | RenderTarget | CameraDistance;
+constexpr uint16_t FillExtrusionFeatures = 1u << 4;
+constexpr uint16_t All = Texture | Stencil | RenderTarget | CameraDistance | FillExtrusionFeatures;
 } // namespace CommandPayloadSections
 
 /// Nonempty payloads start with this header and end on an eight-byte boundary.
 /// UBOs follow in drawable, evaluated, and tile order at four-byte boundaries.
-/// Optional texture, stencil, target, and camera sections follow in that order.
-/// Textures align to eight bytes and other sections align to four bytes.
+/// Optional texture, stencil, target, camera, and fill-extrusion feature
+/// sections follow in that order. Textures and fill-extrusion features align to
+/// eight bytes and other sections align to four bytes.
 struct CommandPayloadHeader {
     uint16_t drawableUBOSize = 0;
     uint16_t propsUBOSize = 0;
@@ -182,6 +185,55 @@ struct CommandStencil {
     StencilModeType mode = StencilModeType::Disabled;
 };
 static_assert(sizeof(CommandStencil) == 8, "CommandStencil size must be stable for FFI");
+
+/// One polygon of a feature in a fill-extrusion segment.
+///
+/// Vertex and index offsets are relative to the command's vertex and index
+/// data. A polygon's wall and roof triangles are contiguous. The polygon index
+/// follows feature query order and counts polygons without geometry. The
+/// identifier holds integer or double bits, or for strings the address of
+/// idLength UTF-8 bytes, which remain owned by the renderer for the frame.
+struct CommandFillExtrusionPart {
+    uint32_t featureIndex = 0;
+    uint32_t polygonIndex = 0;
+    uint32_t vertexOffset = 0;
+    uint32_t vertexCount = 0;
+    uint32_t indexOffset = 0;
+    uint32_t indexCount = 0;
+    uint32_t idType = 0; // 0 none, 1 unsigned, 2 signed, 3 double, 4 string
+    uint32_t idLength = 0;
+    uint64_t idValue = 0;
+};
+static_assert(sizeof(CommandFillExtrusionPart) == 40, "CommandFillExtrusionPart size must be stable for FFI");
+
+/// The feature parts of a fill-extrusion command, its style layer, and the
+/// tile they belong to.
+///
+/// Parts are partStride bytes apart. Parts and the layerIdLength UTF-8 bytes of
+/// the style layer ID remain owned by the renderer for the frame lifetime. A
+/// tile's geometry may span several segments, each exported as its own
+/// command. The canonical tile identifies the source data, so a part's feature
+/// and polygon indices are stable across overscaled renderings. metadataId
+/// identifies the bucket's feature metadata, which is immutable after layout
+/// publication. Replacing the bucket changes it even when the GPU vertex and
+/// index bytes stay equal.
+struct CommandFillExtrusionFeatures {
+    const void* parts = nullptr;
+    const char* layerId = nullptr;
+    uint32_t partCount = 0;
+    uint32_t partStride = 0;
+    uint32_t layerIdLength = 0;
+    int32_t tileWrap = 0;
+    uint32_t tileOverscaledZ = 0;
+    uint32_t tileZ = 0;
+    uint32_t tileX = 0;
+    uint32_t tileY = 0;
+    uint32_t segmentIndex = 0;
+    uint32_t reserved = 0;
+    uint64_t metadataId = 0;
+};
+static_assert(sizeof(CommandFillExtrusionFeatures) == 64,
+              "CommandFillExtrusionFeatures size must be stable for FFI");
 
 /// Omitted target data selects the main framebuffer.
 /// RenderTargetRGBA8 on a clear command selects RGBA8 instead of RGBA16Float.
@@ -225,6 +277,27 @@ COMMAND_EXPORT_ABI_OFFSET(CommandStencil, mode, 4);
 COMMAND_EXPORT_ABI_OFFSET(CommandRenderTarget, id, 0);
 COMMAND_EXPORT_ABI_OFFSET(CommandRenderTarget, width, 4);
 COMMAND_EXPORT_ABI_OFFSET(CommandRenderTarget, height, 8);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionPart, featureIndex, 0);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionPart, polygonIndex, 4);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionPart, vertexOffset, 8);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionPart, vertexCount, 12);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionPart, indexOffset, 16);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionPart, indexCount, 20);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionPart, idType, 24);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionPart, idLength, 28);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionPart, idValue, 32);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, parts, 0);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, layerId, 8);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, partCount, 16);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, partStride, 20);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, layerIdLength, 24);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, tileWrap, 28);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, tileOverscaledZ, 32);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, tileZ, 36);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, tileX, 40);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, tileY, 44);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, segmentIndex, 48);
+COMMAND_EXPORT_ABI_OFFSET(CommandFillExtrusionFeatures, metadataId, 56);
 
 /// Borrowed UBO bytes and optional values for one command.
 /// Spans into a frame arena remain valid only until it is appended, compacted, or released.
@@ -236,6 +309,7 @@ struct DrawCommandPayload {
     std::optional<CommandStencil> stencil;
     std::optional<CommandRenderTarget> renderTarget;
     std::optional<float> cameraDistance;
+    std::optional<CommandFillExtrusionFeatures> fillExtrusionFeatures;
 };
 
 /// Validates a command's payload bounds and exposes its borrowed UBO spans.
@@ -300,6 +374,11 @@ FrameData& getFrameData();
 /// Current layer index — set by LayerGroup::render(), read while exporting masks and drawables.
 void setCurrentLayerIndex(uint32_t idx);
 uint32_t getCurrentLayerIndex();
+
+/// Current style layer ID, set with the layer index while a layer group renders.
+/// The string is owned by the layer group and remains valid for the frame.
+void setCurrentLayerID(const std::string* id);
+const std::string* getCurrentLayerID();
 
 } // namespace command_export
 } // namespace mln

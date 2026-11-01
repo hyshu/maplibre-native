@@ -9,6 +9,11 @@
 #include <mln/style/layers/fill_extrusion_layer_properties.hpp>
 #include <mln/tile/geometry_tile_data.hpp>
 
+#include <cstdint>
+#include <deque>
+#include <span>
+#include <string>
+
 namespace mln {
 
 class BucketParameters;
@@ -22,6 +27,37 @@ using FillExtrusionLayoutVertex = gfx::Vertex<TypeList<attributes::pos, attribut
 #else
 using FillExtrusionLayoutVertex = gfx::Vertex<TypeList<attributes::pos, attributes::decimals_ed, attributes::normal2d>>;
 #endif
+
+/// The kind of feature identifier stored in a FillExtrusionFeaturePart.
+enum class FillExtrusionFeatureIdType : uint32_t {
+    None = 0,
+    Unsigned = 1,
+    Signed = 2,
+    Double = 3,
+    String = 4,
+};
+
+/// One polygon of a feature, as laid out in a triangle segment.
+///
+/// Offsets are relative to the segment, so they address the vertices and
+/// indices exported for it. Each polygon's wall and roof triangles are
+/// contiguous. Polygons are numbered in classifyRings order, the order in
+/// which feature queries return them, including polygons without geometry.
+/// The identifier holds integer or double bits, or for strings the address
+/// and byte length of text owned by the bucket. This layout is exported to
+/// Command Export consumers unchanged.
+struct FillExtrusionFeaturePart {
+    uint32_t featureIndex = 0;
+    uint32_t polygonIndex = 0;
+    uint32_t vertexOffset = 0;
+    uint32_t vertexCount = 0;
+    uint32_t indexOffset = 0;
+    uint32_t indexCount = 0;
+    FillExtrusionFeatureIdType idType = FillExtrusionFeatureIdType::None;
+    uint32_t idLength = 0;
+    uint64_t idValue = 0;
+};
+static_assert(sizeof(FillExtrusionFeaturePart) == 40, "FillExtrusionFeaturePart size must be stable");
 
 class FillExtrusionBucket final : public Bucket {
 public:
@@ -99,7 +135,20 @@ public:
     SegmentVector triangleSegments;
     SegmentVector instanceSegments;
 
+    /// Parts in segment order. featurePartSegmentStarts[i] is the first part
+    /// of triangleSegments[i].
+    std::vector<FillExtrusionFeaturePart> featureParts;
+    std::vector<std::size_t> featurePartSegmentStarts;
+
+    /// The parts of triangleSegments[segment], or none for an invalid index.
+    std::span<const FillExtrusionFeaturePart> featurePartsForSegment(std::size_t segment) const;
+
     std::unordered_map<std::string, FillExtrusionBinders> paintPropertyBinders;
+
+private:
+    // Text of string feature identifiers. A deque keeps element addresses
+    // stable while features are added.
+    std::deque<std::string> featureIdStrings;
 };
 
 } // namespace mln

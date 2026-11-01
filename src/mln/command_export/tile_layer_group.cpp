@@ -25,6 +25,7 @@ void TileLayerGroup::render(RenderOrchestrator&, PaintParameters& parameters) {
     }
 
     setCurrentLayerIndex(static_cast<uint32_t>(getLayerIndex()));
+    setCurrentLayerID(&getName());
 
     // Match the immediate backends: 3D drawables share one stencil reference
     // for the whole layer, while 2D drawables are clipped by per-tile masks.

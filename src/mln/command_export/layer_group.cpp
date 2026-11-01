@@ -22,6 +22,7 @@ void LayerGroup::render(RenderOrchestrator&, PaintParameters& parameters) {
     }
 
     setCurrentLayerIndex(static_cast<uint32_t>(getLayerIndex()));
+    setCurrentLayerID(&getName());
     const auto& layerUBOs = uniformBuffers;
     visitDrawables([&](gfx::Drawable& drawable) {
         if (!drawable.getEnabled() || !drawable.hasRenderPass(parameters.pass)) {
