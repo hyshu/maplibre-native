@@ -20,6 +20,8 @@ list(APPEND
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/fill_vertex_data.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/layer_group.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/line_vertex_data.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/heatmap_vertex_data.hpp
+        ${PROJECT_SOURCE_DIR}/include/mln/command_export/offscreen_texture.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/render_pass.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/renderer_backend.hpp
         ${PROJECT_SOURCE_DIR}/include/mln/command_export/texture2d.hpp
@@ -40,6 +42,7 @@ list(APPEND
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/fill_vertex_data.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/layer_group.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/line_vertex_data.cpp
+        ${PROJECT_SOURCE_DIR}/src/mln/command_export/heatmap_vertex_data.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/renderer_backend.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/texture2d.cpp
         ${PROJECT_SOURCE_DIR}/src/mln/command_export/tile_layer_group.cpp

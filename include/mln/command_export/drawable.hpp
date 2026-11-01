@@ -113,6 +113,14 @@ private:
         bool operator==(const LineDDVertexCacheState&) const = default;
     };
 
+    struct HeatmapDDVertexCacheState {
+        DDAttributeCacheState weight;
+        DDAttributeCacheState radius;
+        std::size_t vertexCount = 0;
+
+        bool operator==(const HeatmapDDVertexCacheState&) const = default;
+    };
+
     uint32_t bufferId;
     mutable uint32_t bufferVersion = 0;
 
@@ -156,6 +164,11 @@ private:
     mutable std::vector<uint8_t> lineDDVertexData;
     mutable uint32_t lineDDVertexVersion = 0xFFFFFFFF;
     mutable std::optional<LineDDVertexCacheState> lineDDVertexCacheState;
+
+    // Weight and radius zoom ranges remain stable across camera-only frames.
+    mutable std::vector<uint8_t> heatmapDDVertexData;
+    mutable uint32_t heatmapDDVertexVersion = 0xFFFFFFFF;
+    mutable std::optional<HeatmapDDVertexCacheState> heatmapDDVertexCacheState;
 };
 
 } // namespace command_export
