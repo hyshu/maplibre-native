@@ -11,6 +11,8 @@
 #include <mln/util/convert.hpp>
 #include <mln/util/logging.hpp>
 
+#include <limits>
+
 #if MLN_RENDER_BACKEND_OPENGL
 #include <mln/gl/context.hpp>
 #include <mln/shaders/gl/legacy/clipping_mask_program.hpp>
@@ -31,6 +33,14 @@
 #include <mln/shaders/vulkan/clipping_mask.hpp>
 #include <mln/vulkan/context.hpp>
 #endif // MLN_RENDER_BACKEND_VULKAN
+
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+#include <mln/command_export/draw_command.hpp>
+#include <mln/util/constants.hpp>
+
+#include <array>
+#include <cstring>
+#endif
 
 namespace mln {
 
@@ -155,6 +165,42 @@ bool tileIDsCovered(const RenderTiles& tiles, const TileMaskIDMap& idMap) {
            });
 }
 
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+struct ClippingMaskVertex {
+    int16_t x;
+    int16_t y;
+};
+
+// Process-lifetime geometry: DrawCommand stores direct pointers and the consumer
+// reads them after native rendering has finished producing the frame.
+constexpr std::array<ClippingMaskVertex, 4> clippingMaskVertices{{
+    {0, 0},
+    {static_cast<int16_t>(util::EXTENT), 0},
+    {0, static_cast<int16_t>(util::EXTENT)},
+    {static_cast<int16_t>(util::EXTENT), static_cast<int16_t>(util::EXTENT)},
+}};
+constexpr std::array<uint16_t, 6> clippingMaskIndices{{0, 1, 2, 1, 2, 3}};
+static_assert(sizeof(ClippingMaskVertex) == 4);
+
+void emitClippingMaskCommand(PaintParameters& parameters, const UnwrappedTileID& tileID, int32_t stencilID) {
+    const auto matrix = util::cast<float>(parameters.matrixForTile(tileID));
+
+    auto& command = command_export::getFrameData().addCommand(command_export::ShaderType::ClippingMask,
+                                                              command_export::DrawModeType::Triangles,
+                                                              clippingMaskVertices.data(),
+                                                              sizeof(ClippingMaskVertex),
+                                                              clippingMaskVertices.size(),
+                                                              clippingMaskIndices.data(),
+                                                              clippingMaskIndices.size());
+    command.layerIndex = command_export::getCurrentLayerIndex();
+    command.subLayerIndex = std::numeric_limits<int32_t>::min();
+    command.stencilReference = static_cast<uint32_t>(stencilID);
+    command.stencilMode = command_export::StencilModeType::ClippingMask;
+    std::memcpy(command.drawableUBO, matrix.data(), sizeof(matrix));
+    command.drawableUBOSize = sizeof(matrix);
+}
+#endif
+
 } // namespace
 
 void PaintParameters::clearStencil() {
@@ -183,6 +229,17 @@ void PaintParameters::clearStencil() {
     context.renderingStats().stencilClears++;
 #elif MLN_RENDER_BACKEND_OPENGL
     context.clearStencilBuffer(0b00000000);
+#elif MLN_RENDER_BACKEND_COMMAND_EXPORT
+    // Command Export has no mid-pass stencil clear call. Preserve the operation
+    // in FrameData at its exact native ordering point; the consumer replays this
+    // control command by clearing (or replacing across) the stencil target.
+    auto& command = command_export::getFrameData().addCommand(
+        command_export::ShaderType::ClippingMask, command_export::DrawModeType::Triangles, nullptr, 0, 0, nullptr, 0);
+    command.layerIndex = command_export::getCurrentLayerIndex();
+    command.subLayerIndex = std::numeric_limits<int32_t>::min();
+    command.stencilReference = 0;
+    command.stencilMode = command_export::StencilModeType::Clear;
+    context.renderingStats().stencilClears++;
 #endif
 }
 
@@ -205,7 +262,20 @@ bool PaintParameters::renderTileClippingMasks(const RenderTiles& renderTiles) {
         clearStencil();
     }
 
-#if MLN_RENDER_BACKEND_WEBGPU
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+    // Assign the same ordered per-tile references as the immediate backends,
+    // emitting commands only when the mask set actually changes.
+    for (const auto& tileRef : *renderTiles) {
+        const auto& tileID = tileRef.get().id;
+        const int32_t stencilID = nextStencilID;
+        const auto result = tileClippingMaskIDs.insert(std::make_pair(tileID, stencilID));
+        if (result.second) {
+            nextStencilID++;
+            emitClippingMaskCommand(*this, tileID, stencilID);
+        }
+    }
+    context.renderingStats().stencilUpdates++;
+#elif MLN_RENDER_BACKEND_WEBGPU
     std::vector<shaders::ClipUBO> tileUBOs;
     for (const auto& tileRef : *renderTiles) {
         const auto& tileID = tileRef.get().id;

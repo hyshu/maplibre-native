@@ -13,7 +13,8 @@
     MLN_TRIANGULATE_FILL_OUTLINES = 0 : Simple line primitives will be generated. Draw using gfx::Lines
     MLN_TRIANGULATE_FILL_OUTLINES = 1 : Generate triangulated lines. Draw using gfx::Triangles and a Line shader.
  */
-#define MLN_TRIANGULATE_FILL_OUTLINES (MLN_RENDER_BACKEND_METAL || MLN_RENDER_BACKEND_WEBGPU)
+#define MLN_TRIANGULATE_FILL_OUTLINES \
+    (MLN_RENDER_BACKEND_METAL || MLN_RENDER_BACKEND_WEBGPU || MLN_RENDER_BACKEND_COMMAND_EXPORT)
 
 #if MLN_TRIANGULATE_FILL_OUTLINES
 #include <mln/renderer/buckets/line_bucket.hpp>
@@ -25,6 +26,9 @@ class BucketParameters;
 class RenderFillLayer;
 
 using FillBinders = PaintPropertyBinders<style::FillPaintProperties::DataDrivenProperties>;
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+using FillOutlineBinders = PaintPropertyBinders<TypeList<style::FillOpacity, style::FillOutlineColor>>;
+#endif
 using FillLayoutVertex = gfx::Vertex<TypeList<attributes::pos>>;
 
 class FillBucket final : public Bucket {
@@ -86,6 +90,10 @@ public:
     SegmentVector triangleSegments;
 
     std::map<std::string, FillBinders> paintPropertyBinders;
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+    // Triangulated outlines use a different vertex topology from fills.
+    std::map<std::string, FillOutlineBinders> outlinePaintPropertyBinders;
+#endif
 
 private:
     void generateBuffers(const GeometryCollection&);

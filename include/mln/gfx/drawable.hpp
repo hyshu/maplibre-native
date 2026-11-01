@@ -221,6 +221,20 @@ public:
     /// Set shared indexes and segments
     virtual void setIndexData(gfx::IndexVectorBasePtr, std::vector<UniqueDrawSegment>) = 0;
 
+    /// Export vertex/index data for external rendering.
+    struct ExportedData {
+        const void* vertexData = nullptr;
+        size_t vertexBytes = 0;
+        const uint16_t* indexData = nullptr;
+        size_t indexCount = 0;
+        const void* drawableUbo = nullptr;
+        size_t drawableUboSize = 0;
+        const void* propsUbo = nullptr;
+        size_t propsUboSize = 0;
+        uint32_t uboIndex = 0;
+    };
+    virtual bool exportData(ExportedData& /*out*/) const { return false; }
+
     /// Get the tweakers attached to this drawable
     const std::vector<DrawableTweakerPtr>& getTweakers() const { return tweakers; }
 

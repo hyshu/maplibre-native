@@ -18,6 +18,12 @@ FillBucket::FillBucket(const FillBucket::PossiblyEvaluatedLayoutProperties&,
         paintPropertyBinders.emplace(std::piecewise_construct,
                                      std::forward_as_tuple(pair.first),
                                      std::forward_as_tuple(getEvaluated<FillLayerProperties>(pair.second), zoom));
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+        outlinePaintPropertyBinders.emplace(
+            std::piecewise_construct,
+            std::forward_as_tuple(pair.first),
+            std::forward_as_tuple(getEvaluated<FillLayerProperties>(pair.second), zoom));
+#endif
     }
 }
 
@@ -69,6 +75,11 @@ void FillBucket::populateBinders(const GeometryTileFeature& feature,
             pair.second.populateVertexVectors(feature, vertices.elements(), index, patternPositions, {}, canonical);
         }
     }
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+    for (auto& pair : outlinePaintPropertyBinders) {
+        pair.second.populateVertexVectors(feature, lineVertices.elements(), index, patternPositions, {}, canonical);
+    }
+#endif
 }
 
 void FillBucket::addFeature(const GeometryTileFeature& feature,
@@ -116,6 +127,13 @@ void FillBucket::update(const FeatureStates& states,
 
         sharedVertices->updateModified();
     }
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+    auto outlineIt = outlinePaintPropertyBinders.find(layerID);
+    if (outlineIt != outlinePaintPropertyBinders.end()) {
+        outlineIt->second.updateVertexVectors(states, layer, imagePositions);
+        uploaded = false;
+    }
+#endif
 }
 
 } // namespace mln

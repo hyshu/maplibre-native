@@ -487,7 +487,14 @@ void RenderLineLayer::update(gfx::ShaderRegistry& shaders,
                                                    LinePattern>(
             paintPropertyBinders, evaluated, propertiesAsUniforms, idLineColorVertexAttribute);
 
-        if (!evaluated.get<LineDasharray>().from.empty() && !unevaluated.get<LineGradient>().getValue().isUndefined()) {
+        // Command Export has one texture slot, so dashed lines use the SDF shader.
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+        constexpr bool supportsGradientSDF = false;
+#else
+        constexpr bool supportsGradientSDF = true;
+#endif
+        if (supportsGradientSDF && !evaluated.get<LineDasharray>().from.empty() &&
+            !unevaluated.get<LineGradient>().getValue().isUndefined()) {
             // dash array over a gradient
             if (!lineGradientSDFShaderGroup) {
                 lineGradientSDFShaderGroup = shaders.getShaderGroup("LineGradientSDFShader");

@@ -288,6 +288,9 @@ void RenderFillLayer::update(gfx::ShaderRegistry& shaders,
 
         auto& bucket = static_cast<FillBucket&>(*renderData->bucket);
         auto& binders = bucket.paintPropertyBinders.at(getID());
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+        auto& outlineBinders = bucket.outlinePaintPropertyBinders.at(getID());
+#endif
 
         const auto prevBucketID = getRenderTileBucketID(tileID);
         if (prevBucketID != util::SimpleIdentity::Empty && prevBucketID != bucket.getID()) {
@@ -345,6 +348,11 @@ void RenderFillLayer::update(gfx::ShaderRegistry& shaders,
 #if MLN_TRIANGULATE_FILL_OUTLINES
         const bool dataDrivenOutline = !evaluated.get<FillOutlineColor>().isConstant() ||
                                        !evaluated.get<FillOpacity>().isConstant();
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+        constexpr bool triangulateDataDrivenOutline = true;
+#else
+        constexpr bool triangulateDataDrivenOutline = false;
+#endif
 #endif
 
         const auto fillVertexCount = bucket.vertices.elements();
@@ -361,6 +369,13 @@ void RenderFillLayer::update(gfx::ShaderRegistry& shaders,
         const auto lineVertexCount = bucket.lineVertices.elements();
         const auto getTriangulatedAttributes = [&]() {
             auto attrs = context.createVertexAttributeArray();
+#if MLN_RENDER_BACKEND_COMMAND_EXPORT
+            // Fill paint attributes are populated against FillLayoutVertex
+            // counts. Command Export uses a second binder set populated against
+            // the triangulated LineLayoutVertex topology instead.
+            attrs->readDataDrivenPaintProperties<FillOpacity, FillOutlineColor>(
+                outlineBinders, evaluated, nullptr, idFillOpacityVertexAttribute);
+#endif
             if (const auto& attr = attrs->set(idLinePosNormalVertexAttribute)) {
                 attr->setSharedRawData(bucket.sharedLineVertices,
                                        offsetof(LineLayoutVertex, a1),
@@ -402,7 +417,8 @@ void RenderFillLayer::update(gfx::ShaderRegistry& shaders,
                 fillShaderGroup->getOrCreateShader(context, propertiesAsUniforms));
 
 #if MLN_TRIANGULATE_FILL_OUTLINES
-            const auto outlineTriangulatedShader = doOutline && !dataDrivenOutline ? [&]() -> auto {
+            const auto outlineTriangulatedShader = doOutline && (!dataDrivenOutline || triangulateDataDrivenOutline)
+                ? [&]() -> auto {
                 static const StringIDSetsPair outlinePropertiesAsUniforms{
                     {"a_color", "a_opacity", "a_width"},
                     {idLineColorVertexAttribute, idLineOpacityVertexAttribute, idLineWidthVertexAttribute}};
@@ -458,7 +474,7 @@ void RenderFillLayer::update(gfx::ShaderRegistry& shaders,
             if (fillBuilder && bucket.sharedTriangles->elements()) {
                 fillBuilder->setShader(fillShader);
 #if MLN_TRIANGULATE_FILL_OUTLINES
-                if (doOutline && dataDrivenOutline && outlineBuilder) {
+                if (doOutline && dataDrivenOutline && !triangulateDataDrivenOutline && outlineBuilder) {
                     outlineBuilder->setVertexAttributes(vertexAttrs);
                 }
 #else
@@ -478,7 +494,7 @@ void RenderFillLayer::update(gfx::ShaderRegistry& shaders,
 
 #if MLN_TRIANGULATE_FILL_OUTLINES
             if (doOutline && outlineBuilder) {
-                if (!dataDrivenOutline) {
+                if (!dataDrivenOutline || triangulateDataDrivenOutline) {
                     outlineBuilder->setSubLayerIndex(unevaluated.get<FillOutlineColor>().isUndefined() ? 2 : 0);
                     createOutlineTriangulated(outlineBuilder);
                 } else {
