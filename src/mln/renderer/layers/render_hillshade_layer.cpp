@@ -315,7 +315,14 @@ void RenderHillshadeLayer::update(gfx::ShaderRegistry& shaders,
             segments = &bucket.segments;
         } else {
             vertices = staticDataSharedVertices;
+#if defined(__ANDROID__) && MLN_RENDER_BACKEND_COMMAND_EXPORT
+            if (!staticDataSharedIndices) {
+                staticDataSharedIndices = std::make_shared<gfx::IndexVector<gfx::Triangles>>(staticDataIndices);
+            }
+            indices = staticDataSharedIndices;
+#else
             indices = std::make_shared<gfx::IndexVector<gfx::Triangles>>(staticDataIndices);
+#endif
         }
 
         if (!hillshadeBuilder) {
