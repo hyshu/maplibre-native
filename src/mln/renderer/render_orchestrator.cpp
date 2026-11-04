@@ -6,6 +6,9 @@
 #include <mln/renderer/renderer_observer.hpp>
 #include <mln/renderer/render_source.hpp>
 #include <mln/renderer/render_layer.hpp>
+#if defined(__ANDROID__) && MLN_RENDER_BACKEND_COMMAND_EXPORT
+#include <mln/renderer/layers/render_fill_extrusion_layer.hpp>
+#endif
 #include <mln/renderer/render_static_data.hpp>
 #include <mln/renderer/render_tree.hpp>
 #include <mln/renderer/update_parameters.hpp>
@@ -486,6 +489,10 @@ std::unique_ptr<RenderTree> RenderOrchestrator::createRenderTree(
         addChanges(changes);
     }
 
+    // Source processing can temporarily change a layer's renderability.
+    // Reclaim only after every source has established its final visibility.
+    releaseInactiveFillExtrusionData();
+
     renderTreeParameters->loaded = updateParameters->styleLoaded && isLoaded();
     if (!isMapModeContinuous && !renderTreeParameters->loaded) {
         return nullptr;
@@ -844,12 +851,27 @@ void RenderOrchestrator::setTileCacheSize(uint32_t size) {
 void RenderOrchestrator::reduceMemoryUse() {
     MLN_TRACE_FUNC();
 
+    releaseInactiveFillExtrusionData();
     filteredLayersForSource.shrink_to_fit();
     for (const auto& entry : renderSources) {
         entry.second->reduceMemoryUse();
     }
     imageManager->reduceMemoryUse();
     observer->onInvalidate();
+}
+
+void RenderOrchestrator::releaseInactiveFillExtrusionData() {
+#if defined(__ANDROID__) && MLN_RENDER_BACKEND_COMMAND_EXPORT
+    // A zero tile-cache cap also disables retained geometry for hidden buildings.
+    // Positive caps restore reuse when a layer leaves the visible zoom range.
+    if (tileCacheSize != 0) return;
+
+    for (auto& entry : renderLayers) {
+        if (entry.second->baseImpl->getTypeInfo() == style::FillExtrusionLayer::Impl::staticTypeInfo()) {
+            static_cast<RenderFillExtrusionLayer&>(*entry.second).releaseInactiveRenderData();
+        }
+    }
+#endif
 }
 
 void RenderOrchestrator::dumpDebugLogs() {

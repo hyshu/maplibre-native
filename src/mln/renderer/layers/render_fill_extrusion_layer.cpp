@@ -183,6 +183,23 @@ bool RenderFillExtrusionLayer::queryIntersectsFeature(const GeometryCoordinates&
                                                feature.getGeometries());
 }
 
+std::size_t RenderFillExtrusionLayer::releaseInactiveRenderData() {
+    if (isLayerRenderable()) return 0;
+
+    const auto removed = removeAllDrawables();
+    // Borrowed tile references must disappear before their owning vector.
+    if (layerGroup) {
+        static_cast<TileLayerGroup*>(layerGroup.get())->setStencilTiles({});
+    }
+    renderTiles.reset();
+    if (!renderTilesOwner->empty()) {
+        renderTilesOwner = makeMutable<std::vector<RenderTile>>();
+    }
+    renderTileIDs.clear();
+    newRenderTileIDs.clear();
+    return removed;
+}
+
 void RenderFillExtrusionLayer::update(gfx::ShaderRegistry& shaders,
                                       gfx::Context& context,
                                       const TransformState& state,

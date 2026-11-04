@@ -177,6 +177,8 @@ public:
     }
 
 private:
+    void releaseInactiveFillExtrusionData();
+
     bool isLoaded() const;
     bool hasTransitions(TimePoint) const;
 

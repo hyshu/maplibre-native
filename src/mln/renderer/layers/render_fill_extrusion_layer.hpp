@@ -12,6 +12,10 @@ public:
     explicit RenderFillExtrusionLayer(Immutable<style::FillExtrusionLayer::Impl>);
     ~RenderFillExtrusionLayer() override;
 
+    /// Releases retained drawable and tile data only when this layer is inactive.
+    /// Returns the number of removed drawables. The next visible frame rebuilds them.
+    std::size_t releaseInactiveRenderData();
+
 private:
     void transition(const TransitionParameters &) override;
     void evaluate(const PropertyEvaluationParameters &) override;
